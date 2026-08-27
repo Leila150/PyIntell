@@ -5,16 +5,15 @@ import numpy as np
 from .embeddings import embedding, positional_embedding
 from .layers import linear
 from .transformer import transformer
-from .tokenization import encode, decode, tokenizer
+from .tokenization import encode, decode
 from .generation import sample
 
 
 class Model:
     """Compact Transformer language-model container.
 
-    The 0.1 release provides model construction and forward primitives.
-    Automatic differentiation and optimizer-driven training are not yet
-    implemented.
+    Provides model construction, forward inference, generation, evaluation,
+    and lightweight gradient training of the output projection.
     """
 
     def __init__(self, vocab, reverse_vocab, dataset, parameters, focus, dtype, settings):
@@ -42,11 +41,73 @@ class Model:
     def logits(self, token_ids):
         return linear(self.forward(token_ids), self.output_weights)
 
-    def train(self, dataset=None, **kwargs):
-        raise NotImplementedError("automatic-differentiation training is not implemented in pymodel 0.1.0")
+    @staticmethod
+    def _softmax(logits):
+        shifted = logits - np.max(logits, axis=-1, keepdims=True)
+        probabilities = np.exp(shifted)
+        return probabilities / np.sum(probabilities, axis=-1, keepdims=True)
+
+    def _examples(self, dataset):
+        for sequence in dataset:
+            ids = list(sequence)
+            if len(ids) < 2:
+                continue
+            for end in range(1, len(ids)):
+                yield ids[:end], ids[end]
 
     def evaluate(self, dataset=None, **kwargs):
-        raise NotImplementedError("full evaluation is not implemented in pymodel 0.1.0")
+        """Return average next-token cross-entropy and accuracy."""
+        data = self.dataset if dataset is None else dataset
+        total_loss = 0.0
+        correct = 0
+        count = 0
+        for inputs, target in self._examples(data):
+            logits = self.logits(inputs)[-1]
+            probabilities = self._softmax(logits[None, :])[0]
+            target = int(target)
+            total_loss -= float(np.log(np.clip(probabilities[target], 1e-12, 1.0)))
+            correct += int(np.argmax(probabilities) == target)
+            count += 1
+        if count == 0:
+            raise ValueError("dataset must contain sequences with at least two token IDs")
+        return {"loss": total_loss / count, "accuracy": correct / count, "samples": count}
+
+    def train(self, dataset=None, epochs=1, learning_rate=1e-2, **kwargs):
+        """Train the output projection using exact softmax cross-entropy gradients.
+
+        The Transformer body and embeddings remain fixed in this lightweight
+        0.1 implementation; the output projection is updated by gradient
+        descent. Returns one loss value per epoch.
+        """
+        data = self.dataset if dataset is None else dataset
+        epochs = int(epochs)
+        learning_rate = float(learning_rate)
+        if epochs < 1:
+            raise ValueError("epochs must be at least 1")
+        if learning_rate <= 0:
+            raise ValueError("learning_rate must be positive")
+
+        examples = list(self._examples(data))
+        if not examples:
+            raise ValueError("dataset must contain sequences with at least two token IDs")
+
+        history = []
+        for _ in range(epochs):
+            gradient = np.zeros_like(self.output_weights, dtype=np.float32)
+            total_loss = 0.0
+            for inputs, target in examples:
+                hidden = self.forward(inputs)[-1].astype(np.float32)
+                logits = hidden @ self.output_weights
+                probabilities = self._softmax(logits[None, :])[0]
+                target = int(target)
+                total_loss -= float(np.log(np.clip(probabilities[target], 1e-12, 1.0)))
+                probabilities[target] -= 1.0
+                gradient += np.outer(hidden, probabilities).astype(np.float32)
+            gradient /= len(examples)
+            self.output_weights -= learning_rate * gradient
+            history.append(total_loss / len(examples))
+
+        return {"loss": history[-1], "loss_history": history, "epochs": epochs, "samples": len(examples)}
 
     def generate(self, prompt, max_tokens=50, temperature=1.0, top_k=None, **kwargs):
         if isinstance(prompt, str): ids = encode(prompt, self.vocab)
