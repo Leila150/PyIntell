@@ -1,8 +1,8 @@
 # pymodel
 
-**pymodel** is a modular Python framework for building, experimenting with, and eventually training AI models. It exposes the building blocks of modern language models through a small Python API, from tokenization and embeddings to attention, Transformers, losses, optimizers, generation, and system-resource inspection.
+**pymodel** is a modular Python framework for building, experimenting with, and eventually training AI models. It exposes tokenization, embeddings, attention, Transformer blocks, losses, optimizers, generation, numerical utilities, serialization, quantization, fine-tuning helpers, and system-resource inspection through one package.
 
-> **Status:** `0.1.0` — Alpha. The architecture and numerical primitives are available now. Full reverse-mode automatic differentiation, large-scale optimizer training, and production-grade inference are still under development.
+> **Status:** `0.1.0` — Alpha. Core architecture and numerical primitives are available. Full reverse-mode automatic differentiation, large-scale optimizer training, and production-grade inference are still under development.
 
 ## Install
 
@@ -10,15 +10,7 @@
 pip install pymodel
 ```
 
-Or from source:
-
-```bash
-pip install .
-```
-
 ## Main builder
-
-The central API is:
 
 ```python
 pymodel.build(
@@ -32,58 +24,29 @@ pymodel.build(
 )
 ```
 
-### Arguments
+- `vocab`: token → integer ID dictionary.
+- `reverse_vocab`: integer ID → token dictionary.
+- `dataset`: model/training data.
+- `parameters`: requested approximate parameter count.
+- `focus`: one focus or a list of focuses.
+- `dtype`: optional numerical type; defaults to `float32`.
+- `settings`: optional dictionary for extra configuration.
 
-| Argument | Meaning |
-|---|---|
-| `vocab` | Token → integer ID dictionary. |
-| `reverse_vocab` | Integer ID → token dictionary. |
-| `dataset` | Data associated with the model. |
-| `parameters` | Requested approximate parameter count. |
-| `focus` | One focus or a list of model goals. |
-| `dtype` | Optional numerical type; defaults to `float32`. |
-| `settings` | Optional configuration dictionary. |
-
-`build()` is intentionally an orchestrator: it uses pymodel's existing embedding, positional embedding, Transformer, linear, generation, and system functions rather than creating separate hidden implementations for each focus.
+`build()` is an orchestrator and uses pymodel's existing embedding, positional embedding, Transformer, linear, generation, and system functions.
 
 ## Focus
 
-Supported focus values:
-
 ```text
-intelligence
-natural
-coding
-reasoning
-math
-knowledge
-creativity
-conversation
-instruction
-accuracy
-speed
-memory
-context
-language
-translation
-summarization
-classification
-roleplay
+intelligence, natural, coding, reasoning, math, knowledge,
+creativity, conversation, instruction, accuracy, speed, memory,
+context, language, translation, summarization, classification, roleplay
 ```
 
-Multiple values are allowed:
+Multiple focuses are supported. In `0.1.0`, focus is validated and stored as model metadata so future training/data systems can use the same API for specialization.
 
-```python
-focus = ["intelligence", "natural", "reasoning", "roleplay"]
-```
+## Parameters, dtype, RAM, and storage
 
-In `0.1.0`, focus is validated and stored as model metadata. It is designed so future training/data systems can use the same API to influence objectives and data weighting without introducing a different builder for every specialization.
-
-## Parameters and resource protection
-
-`parameters` is the requested model size, not a byte count. A model with 100 million parameters is not automatically a 100 MB model.
-
-For raw weights:
+`parameters` is model size, not byte size. Raw weight storage depends on `dtype`:
 
 | dtype | Bytes / parameter |
 |---|---:|
@@ -94,11 +57,7 @@ For raw weights:
 | `int8` | 1 |
 | `int4` | 0.5 |
 
-Training usually needs substantially more memory than the raw weights because of gradients, optimizer state, activations, and batches.
-
-Before constructing a model, `build()` checks available RAM and free storage through pymodel's system functions and raises an error when the requested model is clearly too large for the machine.
-
-Available system APIs include:
+Training normally requires additional memory for gradients, optimizer state, activations, and batches. `build()` checks available RAM and free storage before construction and refuses requests that are clearly too large.
 
 ```python
 pymodel.system_info()
@@ -111,13 +70,11 @@ pymodel.device_info()
 pymodel.is_gpu_available()
 ```
 
-GPU detection is optional and does not add a GPU framework as a package dependency.
+GPU detection is optional and does not add a GPU framework as a required dependency.
 
 ## Settings
 
-`settings` is optional and is always treated as a dictionary. It keeps the main function signature small while allowing more configuration.
-
-Current architecture/training settings include:
+`settings` is optional and is a dictionary. Architecture values include:
 
 ```python
 {
@@ -132,269 +89,109 @@ Current architecture/training settings include:
 }
 ```
 
-Additional keys are preserved on the model so the API can grow without repeatedly changing `build()`.
+Extra settings are preserved on the model. `build()` fills missing architecture values automatically from the requested parameter count and vocabulary size.
 
-## Dtypes
+## Public API
 
-Supported names are:
-
-```text
-float64
-float32
-float16
-bfloat16
-int8
-int4
-```
-
-`bfloat16` and `int4` are represented with compatible NumPy storage in this alpha release while the requested dtype remains part of the model configuration. They should not be interpreted as a complete production quantization implementation yet.
-
-## Tokenization and vocabulary
-
-```python
-pymodel.tokenizer()
-pymodel.tokenize()
-pymodel.detokenize()
-pymodel.vocab()
-pymodel.build_vocab()
-pymodel.update_vocab()
-pymodel.merge_vocab()
-pymodel.reverse_vocab()
-pymodel.encode()
-pymodel.decode()
-pymodel.encode_batch()
-pymodel.decode_batch()
-pymodel.add_token()
-pymodel.remove_token()
-pymodel.token_id()
-pymodel.id_token()
-pymodel.token_exists()
-pymodel.special_tokens()
-pymodel.add_special_token()
-pymodel.vocab_size()
-pymodel.normalize_text()
-pymodel.clean_text()
-pymodel.truncate()
-pymodel.pad_sequence()
-```
-
-## Embeddings
-
-```python
-pymodel.embedding()
-pymodel.positional_embedding()
-pymodel.position_embedding()
-pymodel.sinusoidal_embedding()
-pymodel.rotary_embedding()
-pymodel.embedding_similarity()
-```
-
-## Attention
-
-```python
-pymodel.attention()
-pymodel.scaled_dot_product_attention()
-pymodel.self_attention()
-pymodel.cross_attention()
-pymodel.multihead_attention()
-pymodel.multi_query_attention()
-pymodel.grouped_query_attention()
-pymodel.causal_attention()
-pymodel.local_attention()
-pymodel.global_attention()
-pymodel.sparse_attention()
-pymodel.sliding_window_attention()
-pymodel.block_attention()
-pymodel.flash_attention()
-pymodel.rotary_attention()
-pymodel.alibi_attention()
-pymodel.attention_mask()
-pymodel.causal_mask()
-pymodel.padding_mask()
-```
-
-## Neural-network layers
-
-```python
-pymodel.linear()
-pymodel.activation()
-pymodel.relu()
-pymodel.gelu()
-pymodel.sigmoid()
-pymodel.tanh()
-pymodel.leaky_relu()
-pymodel.softplus()
-pymodel.silu()
-pymodel.swish()
-pymodel.mish()
-pymodel.softmax()
-pymodel.log_softmax()
-pymodel.layer_norm()
-pymodel.batch_norm()
-pymodel.rms_norm()
-pymodel.dropout()
-pymodel.flatten_layer()
-pymodel.feedforward()
-pymodel.mlp()
-pymodel.residual()
-pymodel.residual_block()
-```
-
-## Transformer
-
-```python
-pymodel.transformer_block()
-pymodel.transformer()
-```
-
-The current forward path is:
+### Tokenization
 
 ```text
-Token IDs
-  ↓
-Token embedding + positional embedding
-  ↓
-Causal multi-head self-attention
-  ↓
-Residual + normalization
-  ↓
-Feed-forward network
-  ↓
-Residual + normalization
-  ↓
-Repeat blocks
-  ↓
-Language-model logits
+tokenizer() tokenize() detokenize() vocab() build_vocab() update_vocab()
+merge_vocab() reverse_vocab() encode() decode() encode_batch() decode_batch()
+add_token() remove_token() token_id() id_token() token_exists()
+special_tokens() add_special_token() vocab_size() normalize_text() clean_text()
+truncate() pad_sequence()
 ```
 
-## Tensor and math utilities
+### Embeddings
 
-```python
-pymodel.tensor()
-pymodel.zeros()
-pymodel.ones()
-pymodel.full()
-pymodel.random()
-pymodel.randn()
-pymodel.randint()
-pymodel.arange()
-pymodel.reshape()
-pymodel.flatten()
-pymodel.squeeze()
-pymodel.unsqueeze()
-pymodel.transpose()
-pymodel.permute()
-pymodel.matmul()
-pymodel.dot()
-pymodel.sum()
-pymodel.mean()
-pymodel.max()
-pymodel.min()
-pymodel.argmax()
-pymodel.argmin()
-pymodel.clip()
-pymodel.sqrt()
-pymodel.exp()
-pymodel.log()
-pymodel.abs()
-pymodel.power()
-pymodel.cat()
-pymodel.stack()
-pymodel.split()
-pymodel.chunk()
-pymodel.repeat()
-pymodel.expand()
-pymodel.pad()
-pymodel.roll()
-pymodel.gather()
-pymodel.scatter()
-pymodel.where()
-pymodel.masked_fill()
-pymodel.einsum()
-pymodel.norm()
-pymodel.normalize()
+```text
+embedding() positional_embedding() position_embedding()
+sinusoidal_embedding() rotary_embedding() embedding_similarity()
 ```
 
-## Losses
+### Attention
 
-```python
-pymodel.loss()
-pymodel.cross_entropy()
-pymodel.binary_cross_entropy()
-pymodel.mse()
-pymodel.mae()
-pymodel.huber_loss()
-pymodel.kl_divergence()
-pymodel.contrastive_loss()
-pymodel.label_smoothing()
+```text
+attention() scaled_dot_product_attention() self_attention() cross_attention()
+multihead_attention() multi_query_attention() grouped_query_attention()
+causal_attention() local_attention() global_attention() sparse_attention()
+sliding_window_attention() block_attention() flash_attention()
+rotary_attention() alibi_attention() attention_mask() causal_mask() padding_mask()
 ```
 
-## Autograd helpers
+### Layers and activations
 
-The alpha release includes numerical gradient helpers for experimentation:
-
-```python
-pymodel.gradient()
-pymodel.compute_gradients()
-pymodel.numerical_gradient()
-pymodel.backward()
-pymodel.requires_grad()
-pymodel.detach()
-pymodel.no_grad()
-pymodel.zero_grad()
+```text
+linear() activation() relu() gelu() sigmoid() tanh() leaky_relu()
+softplus() silu() swish() mish() softmax() log_softmax() layer_norm()
+batch_norm() rms_norm() dropout() flatten_layer() feedforward() mlp()
+residual() residual_block()
 ```
 
-These are not yet a replacement for a production reverse-mode autograd engine.
+### Transformer
 
-## Optimizers
-
-```python
-pymodel.optimizer()
-pymodel.sgd()
-pymodel.adam()
-pymodel.adamw()
-pymodel.rmsprop()
-pymodel.adagrad()
-pymodel.adadelta()
-pymodel.update_weights()
-pymodel.step()
-pymodel.learning_rate()
-pymodel.zero_grad()
+```text
+transformer_block() transformer()
 ```
 
-## Datasets and training utilities
+Current forward flow:
 
-```python
-pymodel.dataset()
-pymodel.load_dataset()
-pymodel.save_dataset()
-pymodel.split_dataset()
-pymodel.shuffle()
-pymodel.batch()
-pymodel.map_dataset()
-pymodel.filter_dataset()
-pymodel.cache()
-pymodel.train()
-pymodel.evaluate()
+```text
+Token IDs → token embedding + positional embedding
+→ causal multi-head attention → residual/normalization
+→ feed-forward → residual/normalization → repeated blocks → logits
 ```
 
-The high-level model training loop is intentionally not advertised as production-ready in `0.1.0`; the framework is still building its complete autograd and trainable-parameter system.
+### Tensor/math utilities
 
-## Generation and sampling
-
-```python
-pymodel.generate()
-pymodel.sample()
-pymodel.temperature()
-pymodel.top_k()
-pymodel.top_p()
-pymodel.repetition_penalty()
-pymodel.frequency_penalty()
-pymodel.presence_penalty()
-pymodel.stop_at_token()
+```text
+tensor() zeros() ones() full() random() randn() randint() arange()
+reshape() flatten() squeeze() unsqueeze() transpose() permute()
+matmul() dot() sum() mean() max() min() argmax() argmin() clip()
+sqrt() exp() log() abs() power() cat() stack() split() chunk()
+repeat() expand() pad() roll() gather() scatter() where() masked_fill()
+einsum() norm() normalize()
 ```
 
-A constructed model also exposes:
+### Losses
+
+```text
+loss() cross_entropy() binary_cross_entropy() mse() mae() huber_loss()
+kl_divergence() contrastive_loss() label_smoothing()
+```
+
+### Autograd helpers
+
+```text
+gradient() compute_gradients() numerical_gradient() backward()
+requires_grad() detach() no_grad() zero_grad()
+```
+
+These are numerical/experimental helpers in `0.1.0`, not a production reverse-mode engine.
+
+### Optimizers
+
+```text
+optimizer() sgd() adam() adamw() rmsprop() adagrad() adadelta()
+update_weights() step() learning_rate() zero_grad()
+```
+
+### Dataset/training helpers
+
+```text
+dataset() load_dataset() save_dataset() split_dataset() shuffle() batch()
+map_dataset() filter_dataset() cache() train() evaluate()
+```
+
+### Generation and sampling
+
+```text
+generate() sample() temperature() top_k() top_p()
+repetition_penalty() frequency_penalty() presence_penalty() stop_at_token()
+```
+
+A model exposes:
 
 ```python
 model.forward(token_ids)
@@ -403,18 +200,36 @@ model.generate(prompt)
 model.summary()
 ```
 
-## Model inspection and utilities
+### Serialization and checkpoints
 
-```python
-pymodel.model_info()
-pymodel.summary()
-pymodel.count_parameters()
-pymodel.trainable_parameters()
-pymodel.parameter_shapes()
-pymodel.model_size()
-pymodel.memory_usage()
-pymodel.save_config()
-pymodel.load_config()
+```text
+save() load() save_model() load_model() save_weights() load_weights()
+state_dict() load_state_dict() checkpoint() save_checkpoint() load_checkpoint()
+save_vocab() load_vocab() serialize() deserialize() export_model() import_model()
+```
+
+### Quantization/compression helpers
+
+```text
+quantize() dequantize() int8() int4() float16() bfloat16()
+prune() sparsify() compress() decompress() low_rank() factorize()
+```
+
+These are lightweight NumPy helpers; production quantization kernels are not part of `0.1.0`.
+
+### Fine-tuning helpers
+
+```text
+finetune() freeze() unfreeze() freeze_layers() unfreeze_layers()
+trainable() parameter_efficient_finetuning() lora() qlora() adapter()
+prompt_tuning() prefix_tuning() gradient_clipping() weight_decay() ema()
+```
+
+### Learning-rate scheduling
+
+```text
+learning_rate() lr_scheduler() constant_lr() linear_decay()
+cosine_decay() warmup()
 ```
 
 ## Project structure
@@ -434,17 +249,19 @@ pymodel/
 ├── system.py
 ├── autograd.py
 ├── utilities.py
+├── serialization.py
+├── quantization.py
+├── scheduling.py
+├── finetuning.py
 ├── model.py
 └── builder.py
 ```
 
-There are intentionally **no test or example directories** in the repository, as requested. The README is the primary user-facing documentation.
+There are intentionally **no test or example directories** in the repository. This README is the primary user-facing documentation.
 
-## Packaging and PyPI
+## PyPI release
 
-The project uses modern `pyproject.toml` metadata and setuptools. The standard Python packaging flow builds both a source distribution and a wheel. The PyPA documentation recommends `python -m build` for building distributions and `twine check` for validating the generated metadata/README before upload. citeturn0search1turn0search4
-
-Build locally:
+The project uses modern `pyproject.toml` metadata and setuptools. Build distributions with:
 
 ```bash
 python -m pip install --upgrade build twine
@@ -452,19 +269,15 @@ python -m build
 python -m twine check dist/*
 ```
 
-For manual upload:
+Manual upload:
 
 ```bash
 python -m twine upload dist/*
 ```
 
-For automated releases, the repository includes a GitHub Actions workflow using PyPI Trusted Publishing. PyPA recommends Trusted Publishing for supported CI/CD platforms because it avoids storing a long-lived PyPI API token in the workflow. citeturn0search2
+The repository also contains a GitHub Actions workflow that builds and validates the package when a GitHub Release is published, then uses PyPI Trusted Publishing. Configure the repository as a Trusted Publisher on PyPI before the first automated release.
 
-Before the first automated release, configure a PyPI Trusted Publisher for this GitHub repository/workflow. Then publish a GitHub Release and the workflow will build, validate, and publish the distributions.
-
-## Development roadmap
-
-The next major milestones are:
+## Roadmap
 
 1. Trainable parameter objects.
 2. Full reverse-mode automatic differentiation.
@@ -472,10 +285,10 @@ The next major milestones are:
 4. Complete trainable Transformer output head.
 5. Efficient dataset batching and streaming.
 6. Better checkpointing and serialization.
-7. Mixed precision and real quantization.
+7. Mixed precision and production quantization.
 8. Hardware-aware VRAM and memory estimation.
 9. Faster attention and inference.
-10. Larger-model performance work.
+10. Larger-model performance improvements.
 
 ## License
 
