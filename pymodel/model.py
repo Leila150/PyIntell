@@ -9,9 +9,9 @@ from .transformer import transformer
 class Model:
     """A compact Transformer language-model container.
 
-    This initial implementation focuses on architecture construction and
-    inference primitives. Automatic differentiation and full optimization
-    are planned for later releases.
+    Version 0.1 focuses on architecture construction and forward-pass
+    primitives. Automatic differentiation and full optimization are not yet
+    implemented.
     """
 
     def __init__(self, vocab, reverse_vocab, dataset, parameters, focus, dtype, settings):
@@ -20,7 +20,9 @@ class Model:
         self.dataset = dataset
         self.parameters = int(parameters)
         self.focus = tuple(focus) if isinstance(focus, (list, tuple, set)) else (focus,)
-        self.dtype = np.dtype(dtype)
+        self.requested_dtype = str(dtype)
+        storage_dtype = {"bfloat16": "float16", "int4": "uint8"}.get(self.requested_dtype, self.requested_dtype)
+        self.dtype = np.dtype(storage_dtype)
         self.settings = dict(settings)
         self.layers = int(self.settings["layers"])
         self.heads = int(self.settings["heads"])
@@ -44,35 +46,22 @@ class Model:
         if len(ids) > self.context_length:
             raise ValueError("sequence exceeds model context length")
         x = self.embedding_weights[ids] + self.position_weights[:len(ids)]
-        return transformer(
-            x,
-            layers=self.layers,
-            heads=self.heads,
-            hidden_size=self.hidden_size,
-            causal=True,
-        )
+        return transformer(x, layers=self.layers, heads=self.heads, hidden_size=self.hidden_size, causal=True)
 
     def train(self, dataset=None, **kwargs):
-        """Training placeholder; autograd/optimizer training is not enabled yet."""
-        raise NotImplementedError(
-            "full automatic-differentiation training is not implemented in pymodel 0.1.0"
-        )
+        raise NotImplementedError("automatic-differentiation training is not implemented in pymodel 0.1.0")
 
     def evaluate(self, dataset=None, **kwargs):
-        raise NotImplementedError(
-            "full evaluation is not implemented in pymodel 0.1.0"
-        )
+        raise NotImplementedError("full evaluation is not implemented in pymodel 0.1.0")
 
     def generate(self, prompt, **kwargs):
-        raise NotImplementedError(
-            "text generation requires a trained output head and tokenizer in pymodel 0.1.0"
-        )
+        raise NotImplementedError("text generation requires a trained output head in pymodel 0.1.0")
 
     def summary(self):
         return {
             "parameters": self.parameters,
             "focus": list(self.focus),
-            "dtype": str(self.dtype),
+            "dtype": self.requested_dtype,
             "layers": self.layers,
             "heads": self.heads,
             "embedding_size": self.embedding_size,
