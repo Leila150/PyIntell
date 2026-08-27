@@ -12,10 +12,12 @@ from .generation import *
 from .system import *
 from .autograd import *
 from .utilities import *
+from .serialization import *
+from .quantization import *
+from .scheduling import *
+from .finetuning import *
 from .model import Model
 from .builder import build
 
 __version__ = "0.1.0"
-
-# Keep the package namespace intentionally explicit and discoverable.
 __all__ = [name for name in globals() if not name.startswith("_")]
