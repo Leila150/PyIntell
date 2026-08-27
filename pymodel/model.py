@@ -65,6 +65,8 @@ class Model:
             logits = self.logits(inputs)[-1]
             probabilities = self._softmax(logits[None, :])[0]
             target = int(target)
+            if target < 0 or target >= len(self.vocab):
+                raise ValueError("target token ID outside vocabulary")
             total_loss -= float(np.log(np.clip(probabilities[target], 1e-12, 1.0)))
             correct += int(np.argmax(probabilities) == target)
             count += 1
@@ -77,7 +79,7 @@ class Model:
 
         The Transformer body and embeddings remain fixed in this lightweight
         0.1 implementation; the output projection is updated by gradient
-        descent. Returns one loss value per epoch.
+        descent. Returns training history plus before/after evaluation metrics.
         """
         data = self.dataset if dataset is None else dataset
         epochs = int(epochs)
@@ -91,6 +93,12 @@ class Model:
         if not examples:
             raise ValueError("dataset must contain sequences with at least two token IDs")
 
+        for _, target in examples:
+            target = int(target)
+            if target < 0 or target >= len(self.vocab):
+                raise ValueError("target token ID outside vocabulary")
+
+        before = self.evaluate(data)
         history = []
         for _ in range(epochs):
             gradient = np.zeros_like(self.output_weights, dtype=np.float32)
@@ -107,7 +115,17 @@ class Model:
             self.output_weights -= learning_rate * gradient
             history.append(total_loss / len(examples))
 
-        return {"loss": history[-1], "loss_history": history, "epochs": epochs, "samples": len(examples)}
+        after = self.evaluate(data)
+        return {
+            "loss": history[-1],
+            "loss_history": history,
+            "epochs": epochs,
+            "samples": len(examples),
+            "before": before,
+            "after": after,
+            "loss_decreased": after["loss"] < before["loss"],
+            "accuracy_improved": after["accuracy"] > before["accuracy"],
+        }
 
     def generate(self, prompt, max_tokens=50, temperature=1.0, top_k=None, **kwargs):
         if isinstance(prompt, str): ids = encode(prompt, self.vocab)
