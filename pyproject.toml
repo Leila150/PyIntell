@@ -1,17 +1,42 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pymodel"
 version = "0.1.0"
-description = "A modular Python framework for building AI models"
+description = "A modular Python framework for building, training, and experimenting with AI models"
 readme = "README.md"
 requires-python = ">=3.9"
+authors = [{ name = "Leila150" }]
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["ai", "machine-learning", "deep-learning", "transformer", "neural-network", "nlp", "numpy"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "numpy>=1.24",
     "psutil>=5.9",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Leila150/pymodel"
+Repository = "https://github.com/Leila150/pymodel"
+Issues = "https://github.com/Leila150/pymodel/issues"
 
 [tool.setuptools.packages.find]
 include = ["pymodel*"]
