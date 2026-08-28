@@ -10,14 +10,7 @@ from .optim import Optimizer
 
 
 class Model:
-    """A compact, persistent NumPy Transformer language model.
-
-    The model owns all trainable tensors, exposes parameter inspection, supports
-    deterministic forward passes, mini-batch-friendly token examples, and a
-    stateful Adam/AdamW-compatible output optimizer. The NumPy backend stays
-    dependency-light while providing a clean foundation for future autograd and
-    accelerator backends.
-    """
+    """A compact, persistent NumPy Transformer language model."""
     def __init__(self, vocab, reverse_vocab, dataset, parameters, focus, dtype, settings):
         self.vocab = vocab
         self.reverse_vocab = reverse_vocab
@@ -29,6 +22,9 @@ class Model:
         storage_dtype = {"bfloat16": "float16", "int4": "uint8"}.get(self.requested_dtype, self.requested_dtype)
         self.dtype = np.dtype(storage_dtype)
         self.settings = dict(settings)
+        self.model_name = str(self.settings.get("model_name", "pymodel_model"))
+        self.platform = str(self.settings.get("platform", "auto"))
+        self.device = self.settings.get("device")
         self.layers = int(self.settings["layers"])
         self.heads = int(self.settings["heads"])
         self.embedding_size = int(self.settings["embedding_size"])
@@ -56,11 +52,9 @@ class Model:
         return params
 
     def named_parameters(self):
-        """Return a mapping of every persistent trainable tensor."""
         return self._named_parameters()
 
     def parameter_count(self):
-        """Return the actual number of scalar parameters allocated by the model."""
         return int(sum(value.size for value in self._named_parameters().values()))
 
     def parameters_info(self):
@@ -100,7 +94,6 @@ class Model:
                 yield ids[start:end], ids[end]
 
     def evaluate(self, dataset=None, **kwargs):
-        """Return average next-token cross-entropy and accuracy."""
         data = self.dataset if dataset is None else dataset
         total_loss = 0.0; correct = 0; count = 0
         for inputs, target in self._examples(data):
@@ -113,39 +106,34 @@ class Model:
             count += 1
         if count == 0:
             raise ValueError("dataset must contain sequences with at least two token IDs")
-        return {"loss": total_loss / count, "accuracy": correct / count, "samples": count,
-                "perplexity": float(np.exp(min(total_loss / count, 20.0)))}
+        loss = total_loss / count
+        return {"loss": loss, "accuracy": correct / count, "samples": count,
+                "perplexity": float(np.exp(min(loss, 20.0)))}
 
-    def train(self, dataset=None, epochs=1, learning_rate=3e-4, optimizer="adamw", **kwargs):
-        """Train the output head with a real stateful optimizer.
-
-        The full Transformer remains persistent and inspectable; this NumPy
-        training path deliberately updates the output head exactly. It avoids
-        pretending that gradients for the rest of the network exist until the
-        autograd backend can supply them correctly.
-        """
+    def train(self, dataset=None, epochs=1, learning_rate=None, optimizer=None, **kwargs):
+        """Train the model's currently supported trainable output head."""
         data = self.dataset if dataset is None else dataset
-        epochs = int(epochs)
+        epochs = int(epochs if epochs is not None else self.settings.get("epochs", 1))
+        learning_rate = float(learning_rate if learning_rate is not None else self.settings.get("learning_rate", 3e-4))
+        optimizer = optimizer or self.settings.get("optimizer", "adamw")
         if epochs < 1:
             raise ValueError("epochs must be at least 1")
         examples = list(self._examples(data))
         if not examples:
             raise ValueError("dataset must contain sequences with at least two token IDs")
         trainable = {"output": self.output_weights, "output_bias": self.output_bias}
-        if self.optimizer is None or self.optimizer.kind != str(optimizer).lower() or self.optimizer.lr != float(learning_rate):
+        if self.optimizer is None or self.optimizer.kind != str(optimizer).lower() or self.optimizer.lr != learning_rate:
             self.optimizer = Optimizer(trainable, kind=optimizer, learning_rate=learning_rate,
-                                       weight_decay=float(kwargs.get("weight_decay", 0.0)),
-                                       clip_norm=kwargs.get("clip_norm"))
+                                       weight_decay=float(kwargs.get("weight_decay", self.settings.get("weight_decay", 0.0))),
+                                       clip_norm=kwargs.get("clip_norm", self.settings.get("gradient_clip")))
         before = self.evaluate(data)
         history = []
         for _ in range(epochs):
-            gradients = {"output": np.zeros_like(self.output_weights),
-                         "output_bias": np.zeros_like(self.output_bias)}
+            gradients = {"output": np.zeros_like(self.output_weights), "output_bias": np.zeros_like(self.output_bias)}
             total_loss = 0.0
             for inputs, target in examples:
                 hidden = self.forward(inputs)[-1].astype(np.float32)
-                logits = hidden @ self.output_weights + self.output_bias
-                probabilities = self._softmax(logits)
+                probabilities = self._softmax(hidden @ self.output_weights + self.output_bias)
                 target = int(target)
                 total_loss -= float(np.log(np.clip(probabilities[target], 1e-12, 1.0)))
                 probabilities[target] -= 1.0
@@ -156,14 +144,12 @@ class Model:
             self.training_steps += 1
             history.append(total_loss / len(examples))
         after = self.evaluate(data)
-        return {"loss": history[-1], "loss_history": history, "epochs": epochs,
-                "samples": len(examples), "steps": self.training_steps,
-                "before": before, "after": after,
+        return {"loss": history[-1], "loss_history": history, "epochs": epochs, "samples": len(examples),
+                "steps": self.training_steps, "before": before, "after": after,
                 "loss_decreased": after["loss"] < before["loss"],
                 "accuracy_improved": after["accuracy"] > before["accuracy"]}
 
     def generate(self, prompt, max_tokens=50, temperature=1.0, top_k=None, **kwargs):
-        """Generate text or token IDs from a prompt."""
         if isinstance(max_tokens, bool) or not isinstance(max_tokens, (int, np.integer)):
             raise TypeError("max_tokens must be an integer")
         max_tokens = int(max_tokens)
@@ -185,8 +171,9 @@ class Model:
 
     def summary(self):
         actual = self.parameter_count()
-        return {"parameters": actual, "requested_parameters": self.requested_parameters,
+        return {"model_name": self.model_name, "platform": self.platform, "device": self.device,
+                "parameters": actual, "requested_parameters": self.requested_parameters,
                 "focus": list(self.focus), "dtype": self.requested_dtype, "layers": self.layers,
                 "heads": self.heads, "embedding_size": self.embedding_size, "hidden_size": self.hidden_size,
                 "context_length": self.context_length, "vocab_size": len(self.vocab),
-                "training_steps": self.training_steps}
+                "training_steps": self.training_steps, "settings": dict(self.settings)}
