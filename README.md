@@ -1,6 +1,6 @@
-# pyintell
+# PyIntell
 
-**pyintell** is a modular NumPy-based Python framework for building, experimenting with, evaluating, training, and generating from AI/Transformer-style models.
+**PyIntell** is a modular NumPy-based Python framework for building, experimenting with, evaluating, training, and generating from AI/Transformer-style models.
 
 > **Status:** `0.1.0` — Alpha. The public API is available for experimentation. Some advanced training, autograd, quantization, and hardware features are lightweight/experimental rather than production-grade.
 
@@ -145,7 +145,6 @@ The project uses a `src` layout. The **distribution name is `PyIntell`**, and th
 pyintell/
 ├── src/
 │   └── pyintell/
-├── tests/
 ├── .github/
 │   └── workflows/
 │       └── release.yml
@@ -189,7 +188,7 @@ The project is intended for experimentation and development. The Alpha API may e
 
 ## Repository
 
-GitHub: https://github.com/Leila150/pymodel
+GitHub: https://github.com/Leila150/PyIntell
 
 ## License
 
