@@ -68,11 +68,7 @@ def _validate_model_name(model_name):
 
 
 def save_model(model_name, path=None, model=None):
-    """Save the active model under a unique name.
-
-    ``model`` is optional and exists for advanced use. Normally the model
-    returned by ``build()`` becomes active automatically.
-    """
+    """Save the active model under a unique name."""
     global _CURRENT_MODEL
     name = _validate_model_name(model_name)
     if model is None:
@@ -138,6 +134,130 @@ def get_model(model_name):
         raise FileNotFoundError(f"model file for '{name}' no longer exists: {model_path}")
     with model_path.open("rb") as file:
         return pickle.load(file)
+
+
+def delete_model(model_name):
+    """Delete a named model from disk and remove it from the registry.
+
+    Raises FileNotFoundError when the model name is not registered. Deleting
+    a model does not delete or modify any other saved model.
+    """
+    global _CURRENT_MODEL
+    name = _validate_model_name(model_name)
+    registry = _read_registry()
+    if name not in registry:
+        raise FileNotFoundError(f"model '{name}' was not found")
+
+    entry = registry[name]
+    model_path = Path(entry.get("path", "")).expanduser()
+    if not model_path.is_file():
+        # Keep the registry consistent even when the model file was manually removed.
+        del registry[name]
+        _write_registry(registry)
+        raise FileNotFoundError(f"model file for '{name}' no longer exists: {model_path}")
+
+    model_path.unlink()
+    del registry[name]
+    try:
+        _write_registry(registry)
+    except Exception:
+        # Do not silently claim success if the registry could not be updated.
+        raise
+
+    if _CURRENT_MODEL is not None and getattr(_CURRENT_MODEL, "model_name", None) == name:
+        _CURRENT_MODEL = None
+    return True
+
+
+def edit_model(model_name, **changes):
+    """Edit metadata of a saved model and save the updated model in place.
+
+    Supported fields are ``focus``, ``parameters`` and ``model_name``.
+    ``settings`` may also be supplied as a dictionary, but architecture
+    dimensions are intentionally rejected because changing them without
+    rebuilding the weight tensors would corrupt the model.
+
+    The model's existing filename/registry key is retained unless
+    ``model_name`` is supplied, in which case the new name must be unique.
+    """
+    global _CURRENT_MODEL
+    name = _validate_model_name(model_name)
+    registry = _read_registry()
+    if name not in registry:
+        raise FileNotFoundError(f"model '{name}' was not found")
+
+    if not changes:
+        raise ValueError("at least one model field must be provided")
+
+    model_path = Path(registry[name].get("path", "")).expanduser()
+    if not model_path.is_file():
+        raise FileNotFoundError(f"model file for '{name}' no longer exists: {model_path}")
+
+    with model_path.open("rb") as file:
+        model = pickle.load(file)
+
+    allowed = {"focus", "parameters", "settings", "model_name"}
+    unknown = set(changes) - allowed
+    if unknown:
+        fields = ", ".join(sorted(unknown))
+        raise TypeError(f"unsupported model field(s): {fields}")
+
+    if "focus" in changes:
+        focus = changes["focus"]
+        if isinstance(focus, str):
+            model.focus = (focus,)
+        elif isinstance(focus, (list, tuple, set)) and focus:
+            model.focus = tuple(focus)
+        else:
+            raise TypeError("focus must be a non-empty string, list, tuple, or set")
+
+    if "parameters" in changes:
+        parameters = changes["parameters"]
+        if isinstance(parameters, bool) or not isinstance(parameters, (int, float)):
+            raise TypeError("parameters must be a number")
+        if parameters < 0:
+            raise ValueError("parameters must not be negative")
+        model.parameters = int(parameters)
+
+    if "settings" in changes:
+        settings = changes["settings"]
+        if not isinstance(settings, dict):
+            raise TypeError("settings must be a dictionary")
+        protected = {"layers", "heads", "embedding_size", "hidden_size", "context_length"}
+        changed_architecture = protected.intersection(settings)
+        if changed_architecture:
+            fields = ", ".join(sorted(changed_architecture))
+            raise ValueError(f"cannot edit architecture settings in place: {fields}; rebuild the model instead")
+        model.settings.update(settings)
+
+    new_name = name
+    if "model_name" in changes:
+        new_name = _validate_model_name(changes["model_name"])
+        if new_name != name and new_name in registry:
+            raise FileExistsError(f"model name '{new_name}' already exists")
+        new_path = model_path.with_name(f"{new_name}.pymodel")
+        if new_path != model_path and new_path.exists():
+            raise FileExistsError(f"model file already exists: {new_path}")
+    else:
+        new_path = model_path
+
+    model.model_name = new_name
+    temporary = new_path.with_suffix(new_path.suffix + ".tmp")
+    with temporary.open("wb") as file:
+        pickle.dump(model, file, protocol=pickle.HIGHEST_PROTOCOL)
+    os.replace(temporary, new_path)
+
+    if new_name != name:
+        del registry[name]
+        registry[new_name] = {"path": str(new_path.resolve())}
+        if model_path != new_path and model_path.exists():
+            model_path.unlink()
+    else:
+        registry[name] = {"path": str(new_path.resolve())}
+
+    _write_registry(registry)
+    _CURRENT_MODEL = model
+    return model
 
 
 def save(model, path):
