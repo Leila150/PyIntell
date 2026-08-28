@@ -29,6 +29,10 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+system = [
     "psutil>=5.9",
 ]
 
