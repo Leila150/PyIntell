@@ -9,6 +9,13 @@ _REGISTRY_PATH = Path(os.path.expanduser("~/.pymodel/models.json"))
 _CURRENT_MODEL = None
 
 
+def set_current_model(model):
+    """Set the model used by save_model when no explicit model is supplied."""
+    global _CURRENT_MODEL
+    _CURRENT_MODEL = model
+    return model
+
+
 def state_dict(model):
     return {
         name: value.copy()
@@ -61,12 +68,10 @@ def _validate_model_name(model_name):
 
 
 def save_model(model_name, path=None, model=None):
-    """Save a model under a unique name.
+    """Save the active model under a unique name.
 
-    The most recently built/loaded model is used when ``model`` is omitted.
-    ``path`` is the directory where ``<model_name>.pymodel`` is stored.
-    Names are globally tracked in the user's pymodel registry and cannot be
-    silently overwritten.
+    ``model`` is optional and exists for advanced use. Normally the model
+    returned by ``build()`` becomes active automatically.
     """
     global _CURRENT_MODEL
     name = _validate_model_name(model_name)
@@ -105,7 +110,7 @@ def save_model(model_name, path=None, model=None):
 
 
 def load_model(model_name):
-    """Load a previously named model and make it the active model."""
+    """Load a named model and make it the active model."""
     global _CURRENT_MODEL
     name = _validate_model_name(model_name)
     registry = _read_registry()
@@ -123,7 +128,7 @@ def load_model(model_name):
 
 
 def get_model(model_name):
-    """Return a named model without changing the active model."""
+    """Load a named model without changing the active model."""
     name = _validate_model_name(model_name)
     registry = _read_registry()
     if name not in registry:
