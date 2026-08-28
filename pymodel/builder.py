@@ -4,6 +4,7 @@ import math
 
 from .model import Model
 from .system import ram, storage_info
+from .serialization import set_current_model
 
 _SUPPORTED_FOCUS = {
     "intelligence", "natural", "coding", "reasoning", "math", "knowledge",
@@ -28,7 +29,7 @@ def _estimate_architecture(target, vocab_size, settings):
 
 
 def build(vocab, reverse_vocab, dataset, parameters, focus, dtype=None, settings=None):
-    """Build a Transformer model from vocabulary, data, requested size, focus, and settings.
+    """Build a Transformer model and make it the active pymodel model.
 
     ``parameters`` is the requested approximate parameter count. ``dtype`` is
     optional and defaults to float32. ``settings`` is an optional dictionary.
@@ -38,32 +39,45 @@ def build(vocab, reverse_vocab, dataset, parameters, focus, dtype=None, settings
         raise TypeError("vocab and reverse_vocab must be dictionaries")
     if not isinstance(parameters, int) or parameters <= 0:
         raise ValueError("parameters must be a positive integer")
-    settings = {} if settings is None else dict(settings)
-    if not isinstance(settings, dict):
+    if settings is None:
+        settings = {}
+    elif not isinstance(settings, dict):
         raise TypeError("settings must be a dictionary or None")
+    else:
+        settings = dict(settings)
     dtype = "float32" if dtype is None else str(dtype).lower()
-    if dtype not in _SUPPORTED_DTYPES: raise ValueError(f"unsupported dtype: {dtype}")
+    if dtype not in _SUPPORTED_DTYPES:
+        raise ValueError(f"unsupported dtype: {dtype}")
     focuses = [focus] if isinstance(focus, str) else list(focus)
     invalid = [item for item in focuses if item not in _SUPPORTED_FOCUS]
-    if invalid: raise ValueError(f"unsupported focus values: {invalid}")
-    if not focuses: raise ValueError("focus must contain at least one focus")
+    if invalid:
+        raise ValueError(f"unsupported focus values: {invalid}")
+    if not focuses:
+        raise ValueError("focus must contain at least one focus")
 
     architecture = _estimate_architecture(parameters, len(vocab), settings)
     weight_bytes = parameters * _dtype_bytes(dtype)
     required_storage = int(math.ceil(weight_bytes * 1.25))
-    # Conservative estimate for weights + gradients/temporary activations.
     required_ram = int(math.ceil(weight_bytes * (2.0 if dtype in {"int4", "int8"} else 4.0)))
     available_ram = ram().get("available")
     available_storage = storage_info().get("free")
     if available_ram is not None and required_ram > available_ram:
-        raise MemoryError(f"requested model may require about {required_ram / 2**30:.2f} GiB RAM, but only {available_ram / 2**30:.2f} GiB is available")
+        raise MemoryError(
+            f"requested model may require about {required_ram / 2**30:.2f} GiB RAM, "
+            f"but only {available_ram / 2**30:.2f} GiB is available"
+        )
     if available_storage is not None and required_storage > available_storage:
-        raise OSError(f"requested model may require about {required_storage / 2**30:.2f} GiB storage, but only {available_storage / 2**30:.2f} GiB is free")
+        raise OSError(
+            f"requested model may require about {required_storage / 2**30:.2f} GiB storage, "
+            f"but only {available_storage / 2**30:.2f} GiB is free"
+        )
 
     final_settings = dict(settings)
     final_settings.update({
-        "layers": architecture["layers"], "heads": architecture["heads"],
-        "embedding_size": architecture["embedding_size"], "hidden_size": architecture["hidden_size"],
+        "layers": architecture["layers"],
+        "heads": architecture["heads"],
+        "embedding_size": architecture["embedding_size"],
+        "hidden_size": architecture["hidden_size"],
         "context_length": int(settings.get("context_length", 512)),
         "batch_size": int(settings.get("batch_size", 1)),
         "learning_rate": float(settings.get("learning_rate", 3e-4)),
@@ -73,4 +87,6 @@ def build(vocab, reverse_vocab, dataset, parameters, focus, dtype=None, settings
         "estimated_ram_bytes": required_ram,
         "estimated_storage_bytes": required_storage,
     })
-    return Model(vocab, reverse_vocab, dataset, parameters, focuses, dtype, final_settings)
+    model = Model(vocab, reverse_vocab, dataset, parameters, focuses, dtype, final_settings)
+    set_current_model(model)
+    return model
