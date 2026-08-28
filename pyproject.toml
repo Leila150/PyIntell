@@ -42,4 +42,5 @@ Repository = "https://github.com/Leila150/pymodel-ai"
 Issues = "https://github.com/Leila150/pymodel-ai/issues"
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["pymodel*"]
