@@ -1,4 +1,4 @@
-"""Practical NumPy optimizers for pymodel parameters."""
+"""Practical NumPy optimizers for pyintell parameters."""
 
 import numpy as np
 
