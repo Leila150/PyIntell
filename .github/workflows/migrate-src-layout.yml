@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   migrate:
-    if: ${{ !hashFiles('src/pymodel/__init__.py') && hashFiles('pymodel/__init__.py') }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -23,17 +22,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          mkdir -p src
+          if [ -f "src/pymodel/__init__.py" ]; then
+            echo "src/pymodel already exists; nothing to move."
+            exit 0
+          fi
 
-          if [ -d "pymodel" ] && [ ! -d "src/pymodel" ]; then
-            git mv pymodel src/pymodel
-          elif [ -d "pymodel" ] && [ -d "src/pymodel" ]; then
-            echo "Both package locations exist; refusing to overwrite either tree."
-            exit 1
-          elif [ ! -d "src/pymodel" ]; then
-            echo "Neither pymodel/ nor src/pymodel/ exists."
+          if [ ! -d "pymodel" ]; then
+            echo "Expected pymodel/ package directory was not found."
             exit 1
           fi
+
+          mkdir -p src
+          git mv pymodel src/pymodel
 
           python - <<'PY'
           from pathlib import Path
@@ -51,7 +51,7 @@ jobs:
           path.write_text(text)
           PY
 
-      - name: Verify src layout and import package name
+      - name: Verify package layout and metadata
         shell: bash
         run: |
           set -euo pipefail
