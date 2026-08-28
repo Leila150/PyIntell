@@ -16,13 +16,13 @@ from .serialization import *
 from .quantization import *
 from .scheduling import *
 from .finetuning import *
+from .focus import SUPPORTED_FOCUSES, FOCUS_PROFILES, normalize_focus, build_focus_config, focus_description
 from .model import Model
 from .builder import build
 
 __version__ = "0.1.0"
 
 # Explicitly expose the high-level model-management API.
-# These aliases make the public API stable even if wildcard exports change.
 save_model = save_model
 load_model = load_model
 generate = generate
