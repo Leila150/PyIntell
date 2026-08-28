@@ -67,8 +67,21 @@ def _validate_model_name(model_name):
     return name
 
 
+def _model_file(directory, name):
+    """Return the canonical saved-model path inside a directory."""
+    directory = Path(directory).expanduser()
+    directory.mkdir(parents=True, exist_ok=True)
+    if not directory.is_dir():
+        raise NotADirectoryError(f"path must be a directory: {directory}")
+    return directory / f"{name}.pymodel"
+
+
 def save_model(model_name, path=None, model=None):
-    """Save the active model under a unique name."""
+    """Save a model under a unique name.
+
+    ``path`` is the directory where ``<model_name>.pymodel`` is created.
+    If ``model`` is omitted, the most recently built/loaded model is used.
+    """
     global _CURRENT_MODEL
     name = _validate_model_name(model_name)
     if model is None:
@@ -82,24 +95,33 @@ def save_model(model_name, path=None, model=None):
     if name in registry:
         raise FileExistsError(f"model name '{name}' already exists")
 
-    directory = Path(path).expanduser()
-    directory.mkdir(parents=True, exist_ok=True)
-    model_path = directory / f"{name}.pymodel"
+    model_path = _model_file(path, name)
     if model_path.exists():
         raise FileExistsError(f"model file already exists: {model_path}")
 
-    with model_path.open("wb") as file:
-        pickle.dump(model, file, protocol=pickle.HIGHEST_PROTOCOL)
+    # Store the name on the model so the active-model state is unambiguous.
+    model.model_name = name
 
-    registry[name] = {"path": str(model_path.resolve())}
+    temporary = model_path.with_suffix(model_path.suffix + ".tmp")
     try:
-        _write_registry(registry)
-    except Exception:
+        with temporary.open("wb") as file:
+            pickle.dump(model, file, protocol=pickle.HIGHEST_PROTOCOL)
+        os.replace(temporary, model_path)
+
+        registry[name] = {"path": str(model_path.resolve())}
         try:
-            model_path.unlink()
+            _write_registry(registry)
+        except Exception:
+            try:
+                model_path.unlink()
+            except OSError:
+                pass
+            raise
+    finally:
+        try:
+            temporary.unlink()
         except OSError:
             pass
-        raise
 
     _CURRENT_MODEL = model
     return str(model_path)
@@ -113,12 +135,13 @@ def load_model(model_name):
     if name not in registry:
         raise FileNotFoundError(f"model '{name}' was not found")
 
-    model_path = Path(registry[name]["path"]).expanduser()
+    model_path = Path(registry[name].get("path", "")).expanduser()
     if not model_path.is_file():
         raise FileNotFoundError(f"model file for '{name}' no longer exists: {model_path}")
 
     with model_path.open("rb") as file:
         model = pickle.load(file)
+    model.model_name = name
     _CURRENT_MODEL = model
     return model
 
@@ -129,40 +152,32 @@ def get_model(model_name):
     registry = _read_registry()
     if name not in registry:
         raise FileNotFoundError(f"model '{name}' was not found")
-    model_path = Path(registry[name]["path"]).expanduser()
+    model_path = Path(registry[name].get("path", "")).expanduser()
     if not model_path.is_file():
         raise FileNotFoundError(f"model file for '{name}' no longer exists: {model_path}")
     with model_path.open("rb") as file:
-        return pickle.load(file)
+        model = pickle.load(file)
+    model.model_name = name
+    return model
 
 
 def delete_model(model_name):
-    """Delete a named model from disk and remove it from the registry.
-
-    Raises FileNotFoundError when the model name is not registered. Deleting
-    a model does not delete or modify any other saved model.
-    """
+    """Delete a named model from disk and remove it from the registry."""
     global _CURRENT_MODEL
     name = _validate_model_name(model_name)
     registry = _read_registry()
     if name not in registry:
         raise FileNotFoundError(f"model '{name}' was not found")
 
-    entry = registry[name]
-    model_path = Path(entry.get("path", "")).expanduser()
+    model_path = Path(registry[name].get("path", "")).expanduser()
     if not model_path.is_file():
-        # Keep the registry consistent even when the model file was manually removed.
         del registry[name]
         _write_registry(registry)
         raise FileNotFoundError(f"model file for '{name}' no longer exists: {model_path}")
 
     model_path.unlink()
     del registry[name]
-    try:
-        _write_registry(registry)
-    except Exception:
-        # Do not silently claim success if the registry could not be updated.
-        raise
+    _write_registry(registry)
 
     if _CURRENT_MODEL is not None and getattr(_CURRENT_MODEL, "model_name", None) == name:
         _CURRENT_MODEL = None
@@ -170,22 +185,12 @@ def delete_model(model_name):
 
 
 def edit_model(model_name, **changes):
-    """Edit metadata of a saved model and save the updated model in place.
-
-    Supported fields are ``focus``, ``parameters`` and ``model_name``.
-    ``settings`` may also be supplied as a dictionary, but architecture
-    dimensions are intentionally rejected because changing them without
-    rebuilding the weight tensors would corrupt the model.
-
-    The model's existing filename/registry key is retained unless
-    ``model_name`` is supplied, in which case the new name must be unique.
-    """
+    """Edit supported metadata of a saved model."""
     global _CURRENT_MODEL
     name = _validate_model_name(model_name)
     registry = _read_registry()
     if name not in registry:
         raise FileNotFoundError(f"model '{name}' was not found")
-
     if not changes:
         raise ValueError("at least one model field must be provided")
 
@@ -199,8 +204,7 @@ def edit_model(model_name, **changes):
     allowed = {"focus", "parameters", "settings", "model_name"}
     unknown = set(changes) - allowed
     if unknown:
-        fields = ", ".join(sorted(unknown))
-        raise TypeError(f"unsupported model field(s): {fields}")
+        raise TypeError(f"unsupported model field(s): {', '.join(sorted(unknown))}")
 
     if "focus" in changes:
         focus = changes["focus"]
@@ -226,8 +230,7 @@ def edit_model(model_name, **changes):
         protected = {"layers", "heads", "embedding_size", "hidden_size", "context_length"}
         changed_architecture = protected.intersection(settings)
         if changed_architecture:
-            fields = ", ".join(sorted(changed_architecture))
-            raise ValueError(f"cannot edit architecture settings in place: {fields}; rebuild the model instead")
+            raise ValueError("cannot edit architecture settings in place; rebuild the model instead")
         model.settings.update(settings)
 
     new_name = name
