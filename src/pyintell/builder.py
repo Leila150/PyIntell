@@ -183,7 +183,7 @@ def build(vocab, reverse_vocab, dataset, parameters, focus, dtype=None, settings
 
     final_settings = dict(settings)
     final_settings.update({
-        "model_name": model_name or settings.get("model_name", "pymodel_model"),
+        "model_name": model_name or settings.get("model_name", "pyintell_model"),
         "platform": platform,
         "device": device,
         "seed": seed,
