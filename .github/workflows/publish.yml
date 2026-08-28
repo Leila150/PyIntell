@@ -1,4 +1,4 @@
-name: Publish pymodel to PyPI
+name: Publish pymodel-ai to PyPI
 
 on:
   release:
