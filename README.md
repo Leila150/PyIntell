@@ -1,15 +1,15 @@
-# pymodel-ai
+# pyintell
 
-**pymodel-ai** is a modular NumPy-based Python framework for building, experimenting with, evaluating, training, and generating from AI/Transformer-style models.
+**pyintell** is a modular NumPy-based Python framework for building, experimenting with, evaluating, training, and generating from AI/Transformer-style models.
 
 > **Status:** `0.1.0` — Alpha. The public API is available for experimentation. Some advanced training, autograd, quantization, and hardware features are lightweight/experimental rather than production-grade.
 
 ## Installation
 
-The **PyPI project name is `pymodel-ai`**.
+The **PyPI project name is `PyIntell`**.
 
 ```bash
-pip install pymodel-ai
+pip install PyIntell
 ```
 
 The Python import name intentionally remains **`pymodel`** for compatibility:
@@ -18,7 +18,7 @@ The Python import name intentionally remains **`pymodel`** for compatibility:
 import pymodel
 ```
 
-This distinction is important: **install `pymodel-ai`, import `pymodel`.**
+This distinction is important: **install `PyIntell`, import `pymodel`.**
 
 ## Quick start
 
@@ -71,7 +71,7 @@ Models can also expose and modify focus through `get_focus()`, `set_focus()`, `f
 
 ## Public API
 
-The `pymodel-ai` distribution exposes the Python package `pymodel`. Its public API includes the following functional areas.
+The `pyintell` distribution exposes the Python package `pymodel`. Its public API includes the following functional areas.
 
 ### Model and building
 
@@ -139,10 +139,10 @@ pymodel.set_seed(42)
 
 ## Package layout
 
-The project uses a `src` layout. The **distribution name is `pymodel-ai`**, while the **Python package/import name remains `pymodel`**.
+The project uses a `src` layout. The **distribution name is `PyIntell`**, while the **Python package/import name remains `pymodel`**.
 
 ```text
-pymodel-ai/
+pyintell/
 ├── src/
 │   └── pymodel/
 ├── tests/
@@ -171,7 +171,7 @@ The release workflow:
 3. Installs `build` and `twine`.
 4. Builds source and wheel distributions.
 5. Runs `twine check` against the distributions.
-6. Publishes the distributions to the `pymodel-ai` PyPI project using Trusted Publishing.
+6. Publishes the distributions to the `PyIntell` PyPI project using Trusted Publishing.
 
 A GitHub Release with the `published` event triggers the workflow. It can also be started manually with `workflow_dispatch`.
 
@@ -183,13 +183,13 @@ A GitHub Release with the `published` event triggers the workflow. It can also b
 
 ## Status
 
-**pymodel-ai `0.1.0` Alpha**
+**pyintell `0.1.0` Alpha**
 
 The project is intended for experimentation and development. The Alpha API may evolve before a stable release.
 
 ## Repository
 
-GitHub: https://github.com/Leila150/pymodel-ai
+GitHub: https://github.com/Leila150/pyintell
 
 ## License
 
