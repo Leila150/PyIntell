@@ -22,6 +22,8 @@ class Model:
         storage_dtype = {"bfloat16": "float16", "int4": "uint8"}.get(self.requested_dtype, self.requested_dtype)
         self.dtype = np.dtype(storage_dtype)
         self.settings = dict(settings)
+        self.focus_config = dict(self.settings.get("focus_config", {"focuses": list(self.focus), "priorities": {}}))
+        self.focus_priorities = dict(self.focus_config.get("priorities", {}))
         self.model_name = str(self.settings.get("model_name", "pymodel_model"))
         self.platform = str(self.settings.get("platform", "auto"))
         self.device = self.settings.get("device")
@@ -60,6 +62,14 @@ class Model:
     def parameters_info(self):
         return {name: {"shape": tuple(value.shape), "dtype": str(value.dtype), "count": int(value.size)}
                 for name, value in self._named_parameters().items()}
+
+    def get_focus(self):
+        """Return the normalized capabilities selected for this model."""
+        return list(self.focus)
+
+    def focus_scores(self):
+        """Return normalized capability priorities produced by the builder."""
+        return dict(self.focus_priorities)
 
     def forward(self, token_ids):
         ids = np.asarray(token_ids, dtype=np.int64)
@@ -173,7 +183,8 @@ class Model:
         actual = self.parameter_count()
         return {"model_name": self.model_name, "platform": self.platform, "device": self.device,
                 "parameters": actual, "requested_parameters": self.requested_parameters,
-                "focus": list(self.focus), "dtype": self.requested_dtype, "layers": self.layers,
+                "focus": list(self.focus), "focus_scores": self.focus_scores(),
+                "dtype": self.requested_dtype, "layers": self.layers,
                 "heads": self.heads, "embedding_size": self.embedding_size, "hidden_size": self.hidden_size,
                 "context_length": self.context_length, "vocab_size": len(self.vocab),
                 "training_steps": self.training_steps, "settings": dict(self.settings)}
