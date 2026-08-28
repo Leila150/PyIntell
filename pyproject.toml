@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pymodel-ai"
 version = "0.1.0"
-description = "A modular NumPy-based Python framework for building, training, and experimenting with AI models"
+description = "A modular NumPy-based Python framework for building, training, evaluating, and generating from AI models"
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [{ name = "Leila150" }]
 license = "MIT"
 license-files = ["LICENSE"]
-keywords = ["ai", "machine-learning", "deep-learning", "transformer", "neural-network", "nlp", "numpy"]
+keywords = ["ai", "machine-learning", "deep-learning", "transformer", "neural-network", "nlp", "numpy", "pymodel"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
