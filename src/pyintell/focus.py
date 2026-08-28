@@ -1,4 +1,4 @@
-"""Alpha focus/capability utilities for pymodel.
+"""Alpha focus/capability utilities for pyintell.
 
 Focus is intentionally lightweight in 0.1.x. It describes intended model
 specialization and provides metadata/priorities for future training systems.
