@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-and-publish:
-    name: Build and publish distribution
+    name: Build and publish pymodel-ai distribution
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -34,5 +34,5 @@ jobs:
       - name: Validate distributions
         run: python -m twine check dist/*
 
-      - name: Publish to PyPI
+      - name: Publish pymodel-ai to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
