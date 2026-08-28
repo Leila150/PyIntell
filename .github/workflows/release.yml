@@ -1,4 +1,4 @@
-name: Publish pymodel-ai to PyPI
+name: Publish PyIntell to PyPI
 
 on:
   release:
@@ -11,11 +11,11 @@ permissions:
 
 jobs:
   build-and-publish:
-    name: Build and publish pymodel-ai distribution
+    name: Build and publish PyIntell distribution
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/pymodel-ai
+      url: https://pypi.org/p/PyIntell
 
     steps:
       - name: Check out source
@@ -36,5 +36,5 @@ jobs:
       - name: Validate distributions
         run: python -m twine check dist/*
 
-      - name: Publish pymodel-ai to PyPI
+      - name: Publish PyIntell to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
