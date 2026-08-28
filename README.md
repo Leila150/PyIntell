@@ -142,7 +142,7 @@ pyintell.set_seed(42)
 The project uses a `src` layout. The **distribution name is `PyIntell`**, and the **Python package/import name is `pyintell`**.
 
 ```text
-pyintell/
+PyIntell/
 ├── src/
 │   └── pyintell/
 ├── .github/
