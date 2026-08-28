@@ -37,10 +37,10 @@ system = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Leila150/pyintell"
-Repository = "https://github.com/Leila150/pyintell"
-Issues = "https://github.com/Leila150/pyintell/issues"
+Homepage = "https://github.com/Leila150/pymodel"
+Repository = "https://github.com/Leila150/pymodel"
+Issues = "https://github.com/Leila150/pymodel/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["pymodel*"]
+include = ["pyintell*"]
