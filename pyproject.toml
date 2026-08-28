@@ -3,9 +3,9 @@ requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pymodel"
+name = "pymodel-ai"
 version = "0.1.0"
-description = "A modular Python framework for building, training, and experimenting with AI models"
+description = "A modular NumPy-based Python framework for building, training, and experimenting with AI models"
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [{ name = "Leila150" }]
@@ -37,9 +37,9 @@ system = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Leila150/pymodel"
-Repository = "https://github.com/Leila150/pymodel"
-Issues = "https://github.com/Leila150/pymodel/issues"
+Homepage = "https://github.com/Leila150/pymodel-ai"
+Repository = "https://github.com/Leila150/pymodel-ai"
+Issues = "https://github.com/Leila150/pymodel-ai/issues"
 
 [tool.setuptools.packages.find]
 include = ["pymodel*"]
