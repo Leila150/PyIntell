@@ -1,5 +1,6 @@
 """Trainable language-model object returned by pymodel.build."""
 
+import time
 import numpy as np
 
 from .embeddings import embedding, positional_embedding
@@ -7,22 +8,28 @@ from .transformer import transformer, init_block
 from .tokenization import encode, decode
 from .generation import sample
 from .optim import Optimizer
+from .focus import build_focus_config, normalize_focus
 
 
 class Model:
-    """A compact, persistent NumPy Transformer language model."""
+    """A compact, persistent NumPy Transformer language model.
+
+    Alpha note: this class provides the framework and introspection APIs. Its
+    training implementation is intentionally simple and is not production AI
+    training yet.
+    """
     def __init__(self, vocab, reverse_vocab, dataset, parameters, focus, dtype, settings):
         self.vocab = vocab
         self.reverse_vocab = reverse_vocab
         self.dataset = dataset
         self.requested_parameters = int(parameters)
         self.parameters = self.requested_parameters
-        self.focus = tuple(focus) if isinstance(focus, (list, tuple, set)) else (focus,)
+        self.focus = tuple(normalize_focus(focus))
         self.requested_dtype = str(dtype)
         storage_dtype = {"bfloat16": "float16", "int4": "uint8"}.get(self.requested_dtype, self.requested_dtype)
         self.dtype = np.dtype(storage_dtype)
         self.settings = dict(settings)
-        self.focus_config = dict(self.settings.get("focus_config", {"focuses": list(self.focus), "priorities": {}}))
+        self.focus_config = dict(self.settings.get("focus_config", build_focus_config(self.focus)))
         self.focus_priorities = dict(self.focus_config.get("priorities", {}))
         self.model_name = str(self.settings.get("model_name", "pymodel_model"))
         self.platform = str(self.settings.get("platform", "auto"))
@@ -43,7 +50,9 @@ class Model:
                                (1.0 / np.sqrt(max(self.embedding_size, 1)))).astype(np.float32)
         self.output_bias = np.zeros(len(vocab), dtype=np.float32)
         self.training_steps = 0
+        self.training_history = []
         self.optimizer = None
+        self.created_at = time.time()
 
     def _named_parameters(self):
         params = {"embedding": self.embedding_weights, "position": self.position_weights,
@@ -67,9 +76,31 @@ class Model:
         """Return the normalized capabilities selected for this model."""
         return list(self.focus)
 
+    def set_focus(self, focus):
+        """Change focus metadata without pretending to retrain the model.
+
+        In 0.1.x this does not modify existing weights. Future training systems
+        can use the resulting configuration to implement specialization.
+        """
+        config = build_focus_config(focus)
+        self.focus = tuple(config["focuses"])
+        self.focus_config = config
+        self.focus_priorities = dict(config["priorities"])
+        self.settings["focus_config"] = config
+        return self.get_focus()
+
     def focus_scores(self):
         """Return normalized capability priorities produced by the builder."""
         return dict(self.focus_priorities)
+
+    def focus_info(self):
+        """Return focus names and their current alpha priority metadata."""
+        ranked = sorted(self.focus_priorities.items(), key=lambda item: (-item[1], item[0]))
+        return {
+            "focuses": self.get_focus(),
+            "priorities": self.focus_scores(),
+            "top_capabilities": [name for name, _ in ranked[:5]],
+        }
 
     def forward(self, token_ids):
         ids = np.asarray(token_ids, dtype=np.int64)
@@ -154,10 +185,12 @@ class Model:
             self.training_steps += 1
             history.append(total_loss / len(examples))
         after = self.evaluate(data)
-        return {"loss": history[-1], "loss_history": history, "epochs": epochs, "samples": len(examples),
-                "steps": self.training_steps, "before": before, "after": after,
-                "loss_decreased": after["loss"] < before["loss"],
-                "accuracy_improved": after["accuracy"] > before["accuracy"]}
+        record = {"loss": history[-1], "loss_history": history, "epochs": epochs, "samples": len(examples),
+                  "steps": self.training_steps, "before": before, "after": after,
+                  "loss_decreased": after["loss"] < before["loss"],
+                  "accuracy_improved": after["accuracy"] > before["accuracy"]}
+        self.training_history.append(record)
+        return record
 
     def generate(self, prompt, max_tokens=50, temperature=1.0, top_k=None, **kwargs):
         if isinstance(max_tokens, bool) or not isinstance(max_tokens, (int, np.integer)):
@@ -187,4 +220,5 @@ class Model:
                 "dtype": self.requested_dtype, "layers": self.layers,
                 "heads": self.heads, "embedding_size": self.embedding_size, "hidden_size": self.hidden_size,
                 "context_length": self.context_length, "vocab_size": len(self.vocab),
-                "training_steps": self.training_steps, "settings": dict(self.settings)}
+                "training_steps": self.training_steps, "training_history_length": len(self.training_history),
+                "settings": dict(self.settings)}
