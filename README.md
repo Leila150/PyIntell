@@ -12,20 +12,20 @@ The **PyPI project name is `PyIntell`**.
 pip install PyIntell
 ```
 
-The Python import name intentionally remains **`pymodel`** for compatibility:
+The Python import name is **`pyintell`**:
 
 ```python
-import pymodel
+import pyintell
 ```
 
-This distinction is important: **install `PyIntell`, import `pymodel`.**
+This distinction is important: **install `PyIntell`, import `pyintell`.**
 
 ## Quick start
 
 ```python
-import pymodel
+import pyintell
 
-model = pymodel.build(
+model = pyintell.build(
     vocab={"hello": 0, "world": 1},
     reverse_vocab={0: "hello", 1: "world"},
     dataset=[[0, 1]],
@@ -40,7 +40,7 @@ print(model.generate("hello"))
 ## Main builder
 
 ```python
-pymodel.build(
+pyintell.build(
     vocab,
     reverse_vocab,
     dataset,
@@ -71,7 +71,7 @@ Models can also expose and modify focus through `get_focus()`, `set_focus()`, `f
 
 ## Public API
 
-The `pyintell` distribution exposes the Python package `pymodel`. Its public API includes the following functional areas.
+The `PyIntell` distribution exposes the Python package `pyintell`. Its public API includes the following functional areas.
 
 ### Model and building
 
@@ -134,17 +134,17 @@ The `pyintell` distribution exposes the Python package `pymodel`. Its public API
 `seed`, `set_seed`, and `random_seed` control random initialization and reproducibility.
 
 ```python
-pymodel.set_seed(42)
+pyintell.set_seed(42)
 ```
 
 ## Package layout
 
-The project uses a `src` layout. The **distribution name is `PyIntell`**, while the **Python package/import name remains `pymodel`**.
+The project uses a `src` layout. The **distribution name is `PyIntell`**, and the **Python package/import name is `pyintell`**.
 
 ```text
 pyintell/
 ├── src/
-│   └── pymodel/
+│   └── pyintell/
 ├── tests/
 ├── .github/
 │   └── workflows/
@@ -189,7 +189,7 @@ The project is intended for experimentation and development. The Alpha API may e
 
 ## Repository
 
-GitHub: https://github.com/Leila150/pyintell
+GitHub: https://github.com/Leila150/pymodel
 
 ## License
 
