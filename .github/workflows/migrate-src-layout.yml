@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   migrate:
-    if: ${{ !hashFiles('src/pymodel/__init__.py') }}
+    if: ${{ !hashFiles('src/pymodel/__init__.py') && hashFiles('pymodel/__init__.py') }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -22,15 +22,43 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           mkdir -p src
-          git mv pymodel src/pymodel
+
+          if [ -d "pymodel" ] && [ ! -d "src/pymodel" ]; then
+            git mv pymodel src/pymodel
+          elif [ -d "pymodel" ] && [ -d "src/pymodel" ]; then
+            echo "Both package locations exist; refusing to overwrite either tree."
+            exit 1
+          elif [ ! -d "src/pymodel" ]; then
+            echo "Neither pymodel/ nor src/pymodel/ exists."
+            exit 1
+          fi
+
           python - <<'PY'
           from pathlib import Path
+
           path = Path("pyproject.toml")
           text = path.read_text()
-          text = text.replace('include = ["pymodel*"]', 'where = ["src"]\ninclude = ["pymodel*"]')
+          old = '[tool.setuptools.packages.find]\ninclude = ["pymodel*"]'
+          new = '[tool.setuptools.packages.find]\nwhere = ["src"]\ninclude = ["pymodel*"]'
+
+          if old in text:
+              text = text.replace(old, new)
+          elif 'where = ["src"]' not in text:
+              raise SystemExit("Could not locate setuptools package discovery configuration")
+
           path.write_text(text)
           PY
+
+      - name: Verify src layout and import package name
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f src/pymodel/__init__.py
+          grep -Eq '^name = "pymodel-ai"$' pyproject.toml
+          grep -Eq '^where = \["src"\]$' pyproject.toml
+          grep -Eq '^include = \["pymodel\*"\]$' pyproject.toml
 
       - name: Commit migration
         shell: bash
@@ -38,10 +66,10 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/pymodel pyproject.toml
+          git add -A
           if git diff --cached --quiet; then
             echo "No migration changes needed."
             exit 0
           fi
-          git commit -m "refactor: move package into src layout"
+          git commit -m "refactor: move pymodel into src layout"
           git push
