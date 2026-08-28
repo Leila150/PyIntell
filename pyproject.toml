@@ -3,7 +3,7 @@ requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pymodel-ai"
+name = "PyIntell"
 version = "0.1.0"
 description = "A modular NumPy-based Python framework for building, training, evaluating, and generating from AI models"
 readme = "README.md"
@@ -37,9 +37,9 @@ system = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Leila150/pymodel-ai"
-Repository = "https://github.com/Leila150/pymodel-ai"
-Issues = "https://github.com/Leila150/pymodel-ai/issues"
+Homepage = "https://github.com/Leila150/pyintell"
+Repository = "https://github.com/Leila150/pyintell"
+Issues = "https://github.com/Leila150/pyintell/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
