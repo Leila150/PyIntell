@@ -1,4 +1,4 @@
-"""Numerically stable attention primitives used by pymodel."""
+"""Numerically stable attention primitives used by pyintell."""
 
 import numpy as np
 
