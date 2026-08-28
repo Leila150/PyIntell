@@ -5,7 +5,7 @@ import os
 import pickle
 from pathlib import Path
 
-_REGISTRY_PATH = Path(os.path.expanduser("~/.pymodel/models.json"))
+_REGISTRY_PATH = Path(os.path.expanduser("~/.pyintell/models.json"))
 _CURRENT_MODEL = None
 
 
@@ -73,13 +73,13 @@ def _model_file(directory, name):
     directory.mkdir(parents=True, exist_ok=True)
     if not directory.is_dir():
         raise NotADirectoryError(f"path must be a directory: {directory}")
-    return directory / f"{name}.pymodel"
+    return directory / f"{name}.pyintell"
 
 
 def save_model(model_name, path=None, model=None):
     """Save a model under a unique name.
 
-    ``path`` is the directory where ``<model_name>.pymodel`` is created.
+    ``path`` is the directory where ``<model_name>.pyintell`` is created.
     If ``model`` is omitted, the most recently built/loaded model is used.
     """
     global _CURRENT_MODEL
