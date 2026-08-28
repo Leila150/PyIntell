@@ -58,84 +58,71 @@ class Model:
     def evaluate(self, dataset=None, **kwargs):
         """Return average next-token cross-entropy and accuracy."""
         data = self.dataset if dataset is None else dataset
-        total_loss = 0.0
-        correct = 0
-        count = 0
+        total_loss = 0.0; correct = 0; count = 0
         for inputs, target in self._examples(data):
             logits = self.logits(inputs)[-1]
             probabilities = self._softmax(logits[None, :])[0]
             target = int(target)
-            if target < 0 or target >= len(self.vocab):
-                raise ValueError("target token ID outside vocabulary")
+            if target < 0 or target >= len(self.vocab): raise ValueError("target token ID outside vocabulary")
             total_loss -= float(np.log(np.clip(probabilities[target], 1e-12, 1.0)))
-            correct += int(np.argmax(probabilities) == target)
-            count += 1
-        if count == 0:
-            raise ValueError("dataset must contain sequences with at least two token IDs")
+            correct += int(np.argmax(probabilities) == target); count += 1
+        if count == 0: raise ValueError("dataset must contain sequences with at least two token IDs")
         return {"loss": total_loss / count, "accuracy": correct / count, "samples": count}
 
     def train(self, dataset=None, epochs=1, learning_rate=1e-2, **kwargs):
-        """Train the output projection using exact softmax cross-entropy gradients.
-
-        The Transformer body and embeddings remain fixed in this lightweight
-        0.1 implementation; the output projection is updated by gradient
-        descent. Returns training history plus before/after evaluation metrics.
-        """
+        """Train the output projection using exact softmax cross-entropy gradients."""
         data = self.dataset if dataset is None else dataset
-        epochs = int(epochs)
-        learning_rate = float(learning_rate)
-        if epochs < 1:
-            raise ValueError("epochs must be at least 1")
-        if learning_rate <= 0:
-            raise ValueError("learning_rate must be positive")
-
+        epochs = int(epochs); learning_rate = float(learning_rate)
+        if epochs < 1: raise ValueError("epochs must be at least 1")
+        if learning_rate <= 0: raise ValueError("learning_rate must be positive")
         examples = list(self._examples(data))
-        if not examples:
-            raise ValueError("dataset must contain sequences with at least two token IDs")
-
+        if not examples: raise ValueError("dataset must contain sequences with at least two token IDs")
         for _, target in examples:
             target = int(target)
-            if target < 0 or target >= len(self.vocab):
-                raise ValueError("target token ID outside vocabulary")
-
-        before = self.evaluate(data)
-        history = []
+            if target < 0 or target >= len(self.vocab): raise ValueError("target token ID outside vocabulary")
+        before = self.evaluate(data); history = []
         for _ in range(epochs):
-            gradient = np.zeros_like(self.output_weights, dtype=np.float32)
-            total_loss = 0.0
+            gradient = np.zeros_like(self.output_weights, dtype=np.float32); total_loss = 0.0
             for inputs, target in examples:
                 hidden = self.forward(inputs)[-1].astype(np.float32)
                 logits = hidden @ self.output_weights
                 probabilities = self._softmax(logits[None, :])[0]
-                target = int(target)
-                total_loss -= float(np.log(np.clip(probabilities[target], 1e-12, 1.0)))
+                target = int(target); total_loss -= float(np.log(np.clip(probabilities[target], 1e-12, 1.0)))
                 probabilities[target] -= 1.0
                 gradient += np.outer(hidden, probabilities).astype(np.float32)
-            gradient /= len(examples)
-            self.output_weights -= learning_rate * gradient
+            gradient /= len(examples); self.output_weights -= learning_rate * gradient
             history.append(total_loss / len(examples))
-
         after = self.evaluate(data)
-        return {
-            "loss": history[-1],
-            "loss_history": history,
-            "epochs": epochs,
-            "samples": len(examples),
-            "before": before,
-            "after": after,
-            "loss_decreased": after["loss"] < before["loss"],
-            "accuracy_improved": after["accuracy"] > before["accuracy"],
-        }
+        return {"loss": history[-1], "loss_history": history, "epochs": epochs, "samples": len(examples),
+                "before": before, "after": after, "loss_decreased": after["loss"] < before["loss"],
+                "accuracy_improved": after["accuracy"] > before["accuracy"]}
 
     def generate(self, prompt, max_tokens=50, temperature=1.0, top_k=None, **kwargs):
-        if isinstance(prompt, str): ids = encode(prompt, self.vocab)
-        else: ids = list(prompt)
+        """Generate text or token IDs from a prompt.
+
+        Unknown text tokens use ``<unk>`` when that token exists in the
+        vocabulary. Otherwise a clear ValueError is raised instead of allowing
+        ``None`` token IDs to reach NumPy.
+        """
+        if isinstance(max_tokens, bool) or not isinstance(max_tokens, (int, np.integer)):
+            raise TypeError("max_tokens must be an integer")
+        max_tokens = int(max_tokens)
+        if max_tokens < 0: raise ValueError("max_tokens must not be negative")
+        if isinstance(prompt, str):
+            unknown_token = "<unk>" if "<unk>" in self.vocab else None
+            ids = encode(prompt, self.vocab, unknown_token=unknown_token)
+            if any(token_id is None for token_id in ids):
+                unknown = [token for token in prompt.split() if token not in self.vocab]
+                raise ValueError(f"unknown token(s) in prompt: {unknown}; add '<unk>' to the vocabulary or use known tokens")
+        else:
+            ids = list(prompt)
+            if any(token_id is None for token_id in ids):
+                raise ValueError("prompt token IDs must not contain None")
         if not ids: raise ValueError("prompt must contain at least one known token")
         for _ in range(max_tokens):
             context = ids[-self.context_length:]
             next_id = sample(self.logits(context)[-1], temperature=temperature, top_k=top_k)
             ids.append(next_id)
-            if next_id not in self.reverse_vocab: break
         return decode(ids, self.reverse_vocab) if isinstance(prompt, str) else ids
 
     def summary(self):
