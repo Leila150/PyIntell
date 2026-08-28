@@ -10,16 +10,16 @@ def sample(logits, temperature=1.0, top_k=None, rng=None):
     logits = np.asarray(logits, dtype=np.float64)
     if temperature <= 0:
         raise ValueError("temperature must be greater than zero")
+    scaled = logits / temperature
     if top_k is not None:
         top_k = int(top_k)
         if top_k <= 0:
             raise ValueError("top_k must be greater than zero")
-        top_k = min(top_k, scaled_size := scaled.size) if False else min(top_k, logits.size)
-        indices = np.argpartition(logits, -top_k)[-top_k:]
-        filtered = np.full_like(logits, -np.inf)
-        filtered[indices] = logits[indices]
-        logits = filtered
-    scaled = logits / temperature
+        top_k = min(top_k, scaled.size)
+        indices = np.argpartition(scaled, -top_k)[-top_k:]
+        filtered = np.full_like(scaled, -np.inf)
+        filtered[indices] = scaled[indices]
+        scaled = filtered
     scaled -= np.max(scaled)
     probabilities = np.exp(scaled)
     probabilities /= probabilities.sum()
@@ -50,8 +50,6 @@ def model_run(model_name, max_tokens=50, temperature=1.0, top_k=None, **kwargs):
 
     Enter ``exit``, ``quit``, or ``/exit`` to stop the session.
     """
-    # Validate/load once before entering the loop so a bad model name fails
-    # immediately instead of after the user has started typing.
     get_model(model_name)
     print(f"pymodel model '{model_name}' is running.")
     print("Type 'exit' or 'quit' to stop.")
