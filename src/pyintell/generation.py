@@ -50,7 +50,7 @@ def model_run(model_name, max_tokens=50, temperature=1.0, top_k=None, **kwargs):
     """
     # Validate/load once before opening the interactive session.
     get_model(model_name)
-    print(f"pymodel model '{model_name}' is running.")
+    print(f"pyintell model '{model_name}' is running.")
     print("Type 'exit' or 'quit' to stop.")
 
     while True:
