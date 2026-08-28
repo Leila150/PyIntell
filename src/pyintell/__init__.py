@@ -1,4 +1,4 @@
-"""pymodel: a modular NumPy-based framework for building AI models."""
+"""pyintell: a modular NumPy-based framework for building AI models."""
 
 from .tokenization import *
 from .embeddings import *
