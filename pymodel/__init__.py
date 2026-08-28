@@ -20,4 +20,12 @@ from .model import Model
 from .builder import build
 
 __version__ = "0.1.0"
+
+# Explicitly expose the high-level model-management API.
+# These aliases make the public API stable even if wildcard exports change.
+save_model = save_model
+load_model = load_model
+generate = generate
+model_run = model_run
+
 __all__ = [name for name in globals() if not name.startswith("_")]
