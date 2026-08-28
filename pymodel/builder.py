@@ -14,17 +14,85 @@ _SUPPORTED_FOCUS = {
 _SUPPORTED_DTYPES = {"float64", "float32", "float16", "bfloat16", "int8", "int4"}
 _SUPPORTED_PLATFORMS = {"auto", "cpu", "gpu", "cuda", "mps", "rocm", "tpu", "android", "mobile"}
 
+# Focus is a model specialization, not merely a label. These profiles describe
+# the capabilities the builder should prioritize when choosing defaults.
+_FOCUS_PROFILES = {
+    "intelligence": {"reasoning": 1.0, "knowledge": 0.9, "accuracy": 0.9},
+    "natural": {"language": 1.0, "conversation": 0.8, "creativity": 0.6},
+    "coding": {"reasoning": 1.0, "instruction": 0.9, "accuracy": 0.9},
+    "reasoning": {"reasoning": 1.0, "accuracy": 0.9, "math": 0.8},
+    "math": {"math": 1.0, "reasoning": 0.9, "accuracy": 0.9},
+    "knowledge": {"knowledge": 1.0, "memory": 0.8, "accuracy": 0.8},
+    "creativity": {"creativity": 1.0, "language": 0.8, "natural": 0.7},
+    "conversation": {"conversation": 1.0, "natural": 0.9, "instruction": 0.7},
+    "instruction": {"instruction": 1.0, "accuracy": 0.9, "conversation": 0.6},
+    "accuracy": {"accuracy": 1.0, "reasoning": 0.8, "knowledge": 0.7},
+    "speed": {"speed": 1.0, "efficiency": 0.9},
+    "memory": {"memory": 1.0, "knowledge": 0.8, "context": 0.7},
+    "context": {"context": 1.0, "memory": 0.8, "language": 0.6},
+    "language": {"language": 1.0, "natural": 0.8, "translation": 0.7},
+    "translation": {"translation": 1.0, "language": 0.9, "accuracy": 0.8},
+    "summarization": {"summarization": 1.0, "language": 0.8, "accuracy": 0.7},
+    "classification": {"classification": 1.0, "accuracy": 0.9, "instruction": 0.6},
+    "roleplay": {"roleplay": 1.0, "conversation": 0.9, "creativity": 0.8},
+}
+
 
 def _dtype_bytes(dtype):
     return {"float64": 8, "float32": 4, "float16": 2, "bfloat16": 2, "int8": 1, "int4": 0.5}[dtype]
 
 
-def _estimate_architecture(target, vocab_size, settings):
-    layers = max(1, int(settings.get("layers", round((target / 2.0e6) ** 0.45))))
-    heads = max(1, int(settings.get("heads", 4 if target < 10_000_000 else 8)))
-    embedding_size = max(32, int(settings.get("embedding_size", round((target / max(vocab_size, 1)) ** 0.5 * 8))))
+def _normalize_focus(focus):
+    focuses = [focus] if isinstance(focus, str) else list(focus)
+    if not focuses:
+        raise ValueError("focus must contain at least one focus")
+    normalized = []
+    for item in focuses:
+        if not isinstance(item, str):
+            raise TypeError("focus values must be strings")
+        value = item.strip().lower()
+        if value not in _SUPPORTED_FOCUS:
+            raise ValueError(f"unsupported focus values: {[value]}")
+        if value not in normalized:
+            normalized.append(value)
+    return normalized
+
+
+def _build_focus_config(focuses):
+    priorities = {}
+    for focus in focuses:
+        for capability, weight in _FOCUS_PROFILES[focus].items():
+            priorities[capability] = priorities.get(capability, 0.0) + weight
+    scale = max(priorities.values(), default=1.0)
+    priorities = {key: round(value / scale, 4) for key, value in priorities.items()}
+    return {"focuses": list(focuses), "priorities": priorities}
+
+
+def _estimate_architecture(target, vocab_size, settings, focus_config):
+    # Focus influences defaults only; explicit architecture settings always win.
+    priorities = focus_config["priorities"]
+    reasoning_boost = max(priorities.get("reasoning", 0.0), priorities.get("math", 0.0))
+    context_boost = priorities.get("context", 0.0)
+    speed_boost = priorities.get("speed", 0.0)
+    default_layers = round((target / 2.0e6) ** 0.45)
+    default_layers += int(round(reasoning_boost * 2))
+    default_layers -= int(round(speed_boost))
+    layers = max(1, int(settings.get("layers", default_layers)))
+
+    heads_default = 4 if target < 10_000_000 else 8
+    heads_default += int(round(reasoning_boost))
+    heads = max(1, int(settings.get("heads", heads_default)))
+
+    embedding_default = round((target / max(vocab_size, 1)) ** 0.5 * 8)
+    if context_boost:
+        embedding_default += int(round(embedding_default * 0.05 * context_boost))
+    embedding_size = max(32, int(settings.get("embedding_size", embedding_default)))
     embedding_size = max(heads, (embedding_size // heads) * heads)
-    hidden_size = max(embedding_size, int(settings.get("hidden_size", embedding_size * 4)))
+
+    hidden_multiplier = 4
+    if reasoning_boost:
+        hidden_multiplier += int(round(reasoning_boost))
+    hidden_size = max(embedding_size, int(settings.get("hidden_size", embedding_size * hidden_multiplier)))
     estimated = vocab_size * embedding_size + layers * (4 * embedding_size**2 + 2 * embedding_size * hidden_size) + embedding_size * vocab_size
     return {"layers": layers, "heads": heads, "embedding_size": embedding_size, "hidden_size": hidden_size, "estimated_parameters": estimated}
 
@@ -44,40 +112,12 @@ def _validate_positive_float(settings, key, default):
 
 
 def build(vocab, reverse_vocab, dataset, parameters, focus, dtype=None, settings=None, model_name=None):
-    """Build a configurable Transformer model.
+    """Build a configurable, focus-specialized Transformer model.
 
-    ``parameters`` is the requested approximate parameter count. ``dtype`` is
-    optional and defaults to float32. ``settings`` controls model/training
-    behavior. ``model_name`` gives the resulting model a persistent human-readable
-    name.
-
-    Supported settings include::
-
-        {
-            "platform": "auto",          # auto/cpu/gpu/cuda/mps/rocm/tpu/android/mobile
-            "device": None,              # optional explicit device identifier
-            "seed": None,                # deterministic initialization seed
-            "layers": 4,
-            "heads": 8,
-            "embedding_size": 256,
-            "hidden_size": 1024,
-            "context_length": 512,
-            "batch_size": 1,
-            "learning_rate": 3e-4,
-            "epochs": 1,
-            "dropout": 0.0,
-            "weight_decay": 0.0,
-            "optimizer": "adamw",
-            "gradient_clip": 1.0,
-            "shuffle": True,
-            "mixed_precision": False,
-            "gradient_accumulation": 1,
-            "checkpoint_interval": 0,
-            "save_checkpoints": True,
-            "bos_token": None,
-            "eos_token": None,
-            "pad_token": None,
-        }
+    ``focus`` selects the capabilities the model should prioritize. Multiple
+    focuses can be supplied and are merged into a normalized priority map.
+    Focus changes architecture defaults when explicit architecture settings are
+    omitted and is persisted in the model for training/inference tooling.
     """
     if not isinstance(vocab, dict) or not isinstance(reverse_vocab, dict):
         raise TypeError("vocab and reverse_vocab must be dictionaries")
@@ -92,12 +132,9 @@ def build(vocab, reverse_vocab, dataset, parameters, focus, dtype=None, settings
     dtype = "float32" if dtype is None else str(dtype).lower()
     if dtype not in _SUPPORTED_DTYPES:
         raise ValueError(f"unsupported dtype: {dtype}")
-    focuses = [focus] if isinstance(focus, str) else list(focus)
-    invalid = [item for item in focuses if item not in _SUPPORTED_FOCUS]
-    if invalid:
-        raise ValueError(f"unsupported focus values: {invalid}")
-    if not focuses:
-        raise ValueError("focus must contain at least one focus")
+
+    focuses = _normalize_focus(focus)
+    focus_config = _build_focus_config(focuses)
 
     if model_name is not None:
         if not isinstance(model_name, str):
@@ -133,7 +170,7 @@ def build(vocab, reverse_vocab, dataset, parameters, focus, dtype=None, settings
     if optimizer not in {"sgd", "adam", "adamw", "rmsprop", "adagrad", "adadelta"}:
         raise ValueError(f"unsupported optimizer: {optimizer}")
 
-    architecture = _estimate_architecture(parameters, len(vocab), settings)
+    architecture = _estimate_architecture(parameters, len(vocab), settings, focus_config)
     weight_bytes = parameters * _dtype_bytes(dtype)
     required_storage = int(math.ceil(weight_bytes * 1.25))
     required_ram = int(math.ceil(weight_bytes * (2.0 if dtype in {"int4", "int8"} else 4.0)))
@@ -163,6 +200,7 @@ def build(vocab, reverse_vocab, dataset, parameters, focus, dtype=None, settings
         "gradient_clip": gradient_clip,
         "gradient_accumulation": gradient_accumulation,
         "dropout": dropout,
+        "focus_config": focus_config,
         "estimated_parameters": architecture["estimated_parameters"],
         "estimated_weight_bytes": int(weight_bytes),
         "estimated_ram_bytes": required_ram,
