@@ -1,4 +1,4 @@
-"""Trainable language-model object returned by pymodel.build."""
+"""Trainable language-model object returned by pyintell.build."""
 
 import time
 import numpy as np
@@ -31,7 +31,7 @@ class Model:
         self.settings = dict(settings)
         self.focus_config = dict(self.settings.get("focus_config", build_focus_config(self.focus)))
         self.focus_priorities = dict(self.focus_config.get("priorities", {}))
-        self.model_name = str(self.settings.get("model_name", "pymodel_model"))
+        self.model_name = str(self.settings.get("model_name", "pyintell_model"))
         self.platform = str(self.settings.get("platform", "auto"))
         self.device = self.settings.get("device")
         self.layers = int(self.settings["layers"])
