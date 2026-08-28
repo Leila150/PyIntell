@@ -12,7 +12,7 @@ The **PyPI project name is `pymodel-ai`**.
 pip install pymodel-ai
 ```
 
-The Python import name intentionally remains **`pymodel`**:
+The Python import name intentionally remains **`pymodel`** for compatibility:
 
 ```python
 import pymodel
@@ -71,7 +71,7 @@ Models can also expose and modify focus through `get_focus()`, `set_focus()`, `f
 
 ## Public API
 
-`pymodel` exposes its public API from the package modules, including the following functional areas.
+The `pymodel-ai` distribution exposes the Python package `pymodel`. Its public API includes the following functional areas.
 
 ### Model and building
 
@@ -139,17 +139,16 @@ pymodel.set_seed(42)
 
 ## Package layout
 
-The project uses a `src` layout. The **distribution name** is `pymodel-ai`, while the **Python package/import name** remains `pymodel`.
+The project uses a `src` layout. The **distribution name is `pymodel-ai`**, while the **Python package/import name remains `pymodel`**.
 
 ```text
-pymodel/
+pymodel-ai/
 ├── src/
 │   └── pymodel/
 ├── tests/
 ├── .github/
 │   └── workflows/
-│       ├── release.yml
-│       └── migrate-src-layout.yml
+│       └── release.yml
 ├── pyproject.toml
 ├── README.md
 └── LICENSE
@@ -190,7 +189,7 @@ The project is intended for experimentation and development. The Alpha API may e
 
 ## Repository
 
-GitHub: https://github.com/Leila150/pymodel
+GitHub: https://github.com/Leila150/pymodel-ai
 
 ## License
 
