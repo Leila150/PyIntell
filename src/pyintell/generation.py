@@ -37,7 +37,7 @@ def generate(model_name, prompt, max_tokens=50, temperature=1.0, top_k=None, **k
     """Generate a response using a saved model name."""
     model = get_model(model_name)
     if not hasattr(model, "generate"):
-        raise TypeError("saved object is not a valid pymodel model")
+        raise TypeError("saved object is not a valid pyintell model")
     return model.generate(prompt, max_tokens=max_tokens, temperature=temperature, top_k=top_k, **kwargs)
 
 
