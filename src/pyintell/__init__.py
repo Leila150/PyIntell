@@ -22,6 +22,7 @@ from .quantization import *
 from .scheduling import *
 from .finetuning import *
 from .focus import SUPPORTED_FOCUSES, FOCUS_PROFILES, normalize_focus, build_focus_config, focus_description
+from .inference import InferenceSession, inference, run
 from .model import Model
 from .builder import build
 
