@@ -1,38 +1,41 @@
-"""Source verification helpers for web-derived knowledge."""
+"""Evidence and source verification primitives."""
 import hashlib, urllib.parse, urllib.request
 
-TRUSTED_DOMAINS = {
-    "docs.python.org", "pypi.org", "numpy.org", "pytorch.org", "fastapi.tiangolo.com",
-    "flask.palletsprojects.com", "kivy.org", "github.com", "developer.mozilla.org",
+TRUSTED_DOMAINS={
+ "docs.python.org","pypi.org","numpy.org","pytorch.org","fastapi.tiangolo.com","flask.palletsprojects.com","kivy.org","github.com","developer.mozilla.org","docs.rs","go.dev","rust-lang.org","nodejs.org","typescriptlang.org","docs.oracle.com","learn.microsoft.com","developer.apple.com","dart.dev","flutter.dev","lua.org","sqlite.org"
 }
 
 def domain(url): return urllib.parse.urlparse(url).netloc.lower().split(":")[0]
 def is_trusted_domain(url):
-    host = domain(url)
-    return host in TRUSTED_DOMAINS or any(host.endswith("." + d) for d in TRUSTED_DOMAINS)
+    host=domain(url); return bool(host) and (host in TRUSTED_DOMAINS or any(host.endswith("."+d) for d in TRUSTED_DOMAINS))
+def fingerprint(text): return hashlib.sha256(str(text).encode("utf-8")).hexdigest()
 
-def verify_url(url, timeout=10):
-    if not url.startswith(("http://", "https://")): return {"valid": False, "reason": "unsupported scheme"}
+def verify_url(url,timeout=8):
+    if not isinstance(url,str) or urllib.parse.urlparse(url).scheme not in {"http","https"}: return {"valid":False,"reason":"unsupported scheme"}
     try:
-        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "PyIntell/0.2.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return {"valid": True, "status": r.status, "url": r.geturl(), "trusted_domain": is_trusted_domain(r.geturl())}
+        req=urllib.request.Request(url,method="HEAD",headers={"User-Agent":"PyIntell/0.2.0"})
+        with urllib.request.urlopen(req,timeout=timeout) as r:
+            final=r.geturl(); return {"valid":True,"status":getattr(r,"status",200),"url":final,"trusted_domain":is_trusted_domain(final),"domain":domain(final)}
     except Exception as exc:
-        return {"valid": False, "error": str(exc), "trusted_domain": is_trusted_domain(url)}
+        # Some sites reject HEAD. A small GET is a safer fallback than declaring the source dead.
+        try:
+            req=urllib.request.Request(url,method="GET",headers={"User-Agent":"PyIntell/0.2.0"})
+            with urllib.request.urlopen(req,timeout=timeout) as r:
+                final=r.geturl(); return {"valid":True,"status":getattr(r,"status",200),"url":final,"trusted_domain":is_trusted_domain(final),"domain":domain(final),"head_error":str(exc)}
+        except Exception as fallback:
+            return {"valid":False,"error":str(fallback),"trusted_domain":is_trusted_domain(url),"domain":domain(url)}
 
-def fingerprint(text): return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-def rank_sources(sources):
-    """Rank sources by domain trust, reachability and duplicate content fingerprints."""
-    ranked = []
-    seen = set()
+def rank_sources(sources,check=True):
+    ranked=[]; seen=set()
     for source in sources:
-        url = source.get("url", "") if isinstance(source, dict) else str(source)
-        score = 2 if is_trusted_domain(url) else 0
-        check = verify_url(url)
-        score += 2 if check.get("valid") else 0
-        key = url.split("#")[0].rstrip("/")
-        score += 1 if key not in seen else -2
+        item=dict(source) if isinstance(source,dict) else {"url":str(source)}
+        url=item.get("url",""); key=url.split("#")[0].rstrip("/")
+        score=0
+        if is_trusted_domain(url): score+=5
+        if key not in seen: score+=2
+        else: score-=3
         seen.add(key)
-        ranked.append({**(source if isinstance(source, dict) else {"url": url}), "verification": check, "score": score})
-    return sorted(ranked, key=lambda x: x["score"], reverse=True)
+        verification=verify_url(url) if check else {"trusted_domain":is_trusted_domain(url)}
+        if verification.get("valid"): score+=2
+        item["verification"]=verification; item["score"]=score; ranked.append(item)
+    return sorted(ranked,key=lambda x:x["score"],reverse=True)
