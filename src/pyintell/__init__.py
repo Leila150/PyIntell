@@ -23,12 +23,18 @@ from .scheduling import *
 from .finetuning import *
 from .focus import SUPPORTED_FOCUSES, FOCUS_PROFILES, normalize_focus, build_focus_config, focus_description
 from .inference import InferenceSession, inference, run
+from .tools import Tool, ToolRegistry, tool
+from .builtin_tools import web_search, pypi_search, pip, bash
+from .packages import PackageInfo, TRUSTED_PACKAGES, register_package, get_package, list_packages, package_installed
+from .knowledge import Memory, KnowledgeStore, MemoryStore
+from .dataset import Dataset, load_dataset, save_dataset
+from .verification import verify_url, is_trusted_domain, rank_sources, fingerprint
+from .evaluation import EvaluationResult, Evaluator, evaluate
 from .model import Model
 from .builder import build
 
 __version__ = "0.1.0"
 
-# Explicitly expose the high-level model-management API.
 save_model = save_model
 load_model = load_model
 generate = generate
