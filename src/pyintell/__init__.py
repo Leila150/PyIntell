@@ -4,11 +4,16 @@ from .tokenization import *
 from .embeddings import *
 from .attention import *
 from .layers import *
+from .normalization import *
+from .activations import *
+from .positional import *
+from .residual import *
 from .transformer import *
 from .loss import *
 from .optim import *
 from .training import *
 from .generation import *
+from .decoding import *
 from .system import *
 from .autograd import *
 from .utilities import *
