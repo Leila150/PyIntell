@@ -31,6 +31,7 @@ from .dataset import Dataset, load_dataset, save_dataset
 from .verification import verify_url, is_trusted_domain, rank_sources, fingerprint
 from .evaluation import EvaluationResult, Evaluator, evaluate
 from .crashlog import CrashLogger, get_logger, log, crash
+from .terminal import Terminal, TerminalResult, TerminalDisabledError, TerminalUnavailableError, terminal
 from .model import Model
 from .builder import build
 
