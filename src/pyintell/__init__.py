@@ -23,6 +23,7 @@ from .scheduling import *
 from .finetuning import *
 from .focus import SUPPORTED_FOCUSES, FOCUS_PROFILES, normalize_focus, build_focus_config, focus_description
 from .inference import InferenceSession, inference, run
+from .permissions import ToolPermissions, ToolPermissionError, ToolConfirmationRequired
 from .tools import Tool, ToolRegistry, tool, code_execution
 from .packages import PackageInfo, TRUSTED_PACKAGES, register_package, get_package, list_packages, package_installed
 from .knowledge import Memory, KnowledgeStore, MemoryStore
