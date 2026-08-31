@@ -1,133 +1,162 @@
-"""Opt-in terminal execution for AI agents running under Termux.
+"""Safe, opt-in local terminal execution.
 
-The terminal is deliberately disabled by default because commands can modify the
-host system. Enable it explicitly with ``terminal.enable()`` or by passing
-``enabled=True`` when constructing a Terminal instance.
+Works with ordinary host shells and Termux without requiring Termux. Terminal
+execution is disabled by default and never performs automatic privilege
+escalation.
 """
-
 from __future__ import annotations
 
 import os
 import platform
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import Optional, Sequence, Union
 
 Command = Union[str, Sequence[str]]
 
-
 class TerminalDisabledError(RuntimeError):
-    """Raised when terminal execution is attempted while disabled."""
-
+    """Raised when terminal execution is disabled."""
 
 class TerminalUnavailableError(RuntimeError):
-    """Raised when Termux is not available on the current system."""
-
+    """Raised when the requested shell is unavailable."""
 
 @dataclass
 class TerminalResult:
     command: Command
-    stdout: str
-    stderr: str
-    returncode: int
+    stdout: str = ""
+    stderr: str = ""
+    returncode: int = -1
     timed_out: bool = False
+    duration: float = 0.0
 
     @property
     def ok(self) -> bool:
         return self.returncode == 0 and not self.timed_out
 
+    def as_dict(self):
+        return {
+            "command": self.command,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "returncode": self.returncode,
+            "timed_out": self.timed_out,
+            "duration": self.duration,
+            "ok": self.ok,
+        }
 
 class Terminal:
-    """Controlled interface to the local Termux shell.
-
-    Safety defaults:
-      * disabled=True by default
-      * shell=False by default for string commands
-      * configurable timeout
-      * no automatic sudo/root escalation
-      * Termux detection before execution
-    """
-
-    def __init__(self, enabled: bool = False, timeout: float = 30.0,
-                 require_termux: bool = True):
-        if timeout <= 0:
-            raise ValueError("timeout must be greater than 0")
+    """Controlled interface to the host terminal/shell."""
+    def __init__(self, enabled=False, timeout=30.0, require_termux=False,
+                 shell_path=None, max_output=1_000_000):
+        if timeout <= 0: raise ValueError("timeout must be greater than 0")
+        if max_output <= 0: raise ValueError("max_output must be greater than 0")
         self.enabled = bool(enabled)
         self.timeout = float(timeout)
         self.require_termux = bool(require_termux)
+        self.shell_path = shell_path
+        self.max_output = int(max_output)
 
     @staticmethod
-    def available() -> bool:
-        return bool(os.environ.get("TERMUX_VERSION")) or shutil.which("termux-info") is not None
+    def is_termux():
+        return (bool(os.environ.get("TERMUX_VERSION")) or
+                os.environ.get("PREFIX", "").startswith("/data/data/com.termux") or
+                shutil.which("termux-info") is not None)
 
     @staticmethod
-    def is_termux() -> bool:
-        return Terminal.available() or os.environ.get("PREFIX", "").startswith("/data/data/com.termux")
+    def available(shell=None):
+        if shell:
+            return shutil.which(shell) is not None
+        return (shutil.which("bash") is not None or
+                shutil.which("sh") is not None or
+                shutil.which("pwsh") is not None or
+                os.name == "nt")
 
-    def enable(self):
-        self.enabled = True
+    def enable(self): self.enabled = True; return self
+    def disable(self): self.enabled = False; return self
+
+    def configure(self, **values):
+        for key, value in values.items():
+            if not hasattr(self, key): raise ValueError(f"Unknown terminal option: {key}")
+            setattr(self, key, value)
         return self
 
-    def disable(self):
-        self.enabled = False
-        return self
-
-    def status(self) -> dict:
+    def status(self):
+        shell = self.shell_path or os.environ.get("SHELL") or shutil.which("bash") or shutil.which("sh")
         return {
             "enabled": self.enabled,
             "available": self.available(),
             "is_termux": self.is_termux(),
             "platform": platform.platform(),
-            "shell": os.environ.get("SHELL"),
+            "shell": shell,
+            "shell_name": os.path.basename(shell) if shell else None,
         }
 
-    def run(self, command: Command, *, timeout: Optional[float] = None,
-            shell: bool = False, cwd: Optional[str] = None,
-            env: Optional[dict] = None, check: bool = False) -> TerminalResult:
+    @staticmethod
+    def _text(value):
+        if value is None: return ""
+        if isinstance(value, bytes): return value.decode(errors="replace")
+        return str(value)
+
+    def run(self, command: Command, *, timeout=None, shell=False, cwd=None,
+            env=None, check=False, stdin=None, max_output=None) -> TerminalResult:
         if not self.enabled:
-            raise TerminalDisabledError("Terminal tool is disabled; call terminal.enable() explicitly")
+            raise TerminalDisabledError("Terminal execution is disabled")
         if self.require_termux and not self.is_termux():
             raise TerminalUnavailableError("Termux was not detected")
-        if not command:
+        if command is None or (isinstance(command, str) and not command.strip()):
             raise ValueError("command must not be empty")
-        if timeout is not None and timeout <= 0:
-            raise ValueError("timeout must be greater than 0")
+        limit = self.max_output if max_output is None else int(max_output)
+        if limit <= 0: raise ValueError("max_output must be greater than 0")
+        effective_timeout = self.timeout if timeout is None else float(timeout)
+        if effective_timeout <= 0: raise ValueError("timeout must be greater than 0")
 
         if isinstance(command, str):
-            args = command if shell else command.split()
+            if shell:
+                args = command
+            else:
+                args = command.split()
         else:
             args = list(command)
             if not args or not all(isinstance(x, str) and x for x in args):
                 raise ValueError("command sequence must contain non-empty strings")
 
-        timed_out = False
+        run_env = os.environ.copy()
+        if env: run_env.update({str(k): str(v) for k, v in env.items()})
+        started = time.monotonic()
         try:
-            completed = subprocess.run(
-                args,
-                shell=shell,
-                cwd=cwd,
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout if timeout is None else timeout,
-                check=False,
-            )
-            result = TerminalResult(command, completed.stdout, completed.stderr,
-                                    completed.returncode)
+            completed = subprocess.run(args, shell=shell, cwd=cwd, env=run_env,
+                                       input=stdin, capture_output=True, text=True,
+                                       timeout=effective_timeout, check=False)
+            result = TerminalResult(command, self._text(completed.stdout)[:limit],
+                                    self._text(completed.stderr)[:limit],
+                                    completed.returncode, False,
+                                    time.monotonic() - started)
+        except FileNotFoundError as exc:
+            raise TerminalUnavailableError(str(exc)) from exc
         except subprocess.TimeoutExpired as exc:
-            timed_out = True
-            stdout = exc.stdout or ""
-            stderr = exc.stderr or ""
-            if isinstance(stdout, bytes): stdout = stdout.decode(errors="replace")
-            if isinstance(stderr, bytes): stderr = stderr.decode(errors="replace")
-            result = TerminalResult(command, stdout, stderr, -1, timed_out=True)
-
+            result = TerminalResult(command, self._text(exc.stdout)[:limit],
+                                    self._text(exc.stderr)[:limit], -1, True,
+                                    time.monotonic() - started)
         if check and not result.ok:
             raise subprocess.CalledProcessError(result.returncode, command,
-                                                  output=result.stdout,
-                                                  stderr=result.stderr)
+                                                 output=result.stdout, stderr=result.stderr)
         return result
 
-
 terminal = Terminal()
+
+# Register the terminal as a first-class PyIntell tool without making it
+# available by default.
+def _terminal_tool(command, **kwargs):
+    return terminal.run(command, **kwargs).as_dict()
+
+try:
+    from .tools import tool
+    tool.add(_terminal_tool, name="terminal",
+             description="Execute a local terminal command and return structured output.",
+             trusted=True, aliases=("shell_terminal",), category="development",
+             dangerous=True, requires_explicit_enable=True)
+    tool.disable("terminal")
+except Exception:
+    pass
