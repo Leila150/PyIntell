@@ -5,6 +5,8 @@ from collections.abc import Mapping
 import inspect
 import threading
 
+from .permissions import ToolPermissions, ToolPermissionError, ToolConfirmationRequired
+
 
 class ToolDisabledError(RuntimeError):
     """Raised when a disabled tool is called."""
@@ -19,6 +21,7 @@ class Tool:
     trusted: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
     aliases: tuple[str, ...] = ()
+    permissions: ToolPermissions = field(default_factory=ToolPermissions)
     _on_enable: Optional[Callable[[], Any]] = field(default=None, repr=False, compare=False)
     _on_disable: Optional[Callable[[], Any]] = field(default=None, repr=False, compare=False)
 
@@ -28,10 +31,19 @@ class Tool:
         self.name = self.name.strip()
         self.aliases = tuple(dict.fromkeys(str(x).strip() for x in self.aliases if str(x).strip()))
         self.metadata = dict(self.metadata or {})
+        if not isinstance(self.permissions, ToolPermissions):
+            self.permissions = ToolPermissions(**dict(self.permissions or {}))
 
     def __call__(self, *args, **kwargs):
         if not self.enabled: raise ToolDisabledError(f"Tool '{self.name}' is disabled")
-        return self.function(*args, **kwargs)
+        confirmed = bool(kwargs.pop("_confirmed", False))
+        self.permissions.check(self.name, confirmed=confirmed)
+        call_kwargs = dict(kwargs)
+        if self.permissions.timeout is not None and "timeout" not in call_kwargs:
+            call_kwargs["timeout"] = self.permissions.timeout
+        result = self.function(*args, **call_kwargs)
+        self.permissions.record_call()
+        return result
 
     @property
     def signature(self):
@@ -62,11 +74,11 @@ class Tool:
         return {"name": self.name, "description": self.description, "signature": self.signature,
                 "parameters": parameters, "return": return_type, "enabled": self.enabled,
                 "trusted": self.trusted, "aliases": list(self.aliases), "metadata": dict(self.metadata),
-                "module": self.module, "qualified_name": self.qualified_name}
+                "permissions": self.permissions.as_dict(), "module": self.module, "qualified_name": self.qualified_name}
 
 
 class ToolRegistry:
-    """Thread-safe registry for callable AI tools."""
+    """Thread-safe registry for callable AI tools with fine-grained permissions."""
     def __init__(self):
         self._tools: Dict[str, Tool] = {}; self._aliases: Dict[str, str] = {}; self._lock = threading.RLock()
 
@@ -81,7 +93,7 @@ class ToolRegistry:
         return self._aliases.get(key, key)
 
     def add(self, function=None, name: Optional[str] = None, description: str = "", trusted: bool = False,
-            replace: bool = False, aliases=(), enabled: bool = True, **metadata):
+            replace: bool = False, aliases=(), enabled: bool = True, permissions: Optional[ToolPermissions] = None, **metadata):
         def register(fn):
             if isinstance(fn, Tool): raise TypeError("use registry.add(function=...) with a callable, not a Tool instance")
             if not callable(fn): raise TypeError("tool must be callable")
@@ -94,7 +106,8 @@ class ToolRegistry:
                     self.remove(tool_name)
                 conflicts = [a for a in alias_values if a == tool_name or a in self._tools or a in self._aliases]
                 if conflicts: raise ValueError(f"Tool alias is already registered: {conflicts[0]!r}")
-                item = Tool(fn, tool_name, description or inspect.getdoc(fn) or "", bool(enabled), trusted, dict(metadata), alias_values)
+                item = Tool(fn, tool_name, description or inspect.getdoc(fn) or "", bool(enabled), trusted, dict(metadata), alias_values,
+                            permissions or ToolPermissions())
                 self._tools[tool_name] = item
                 for alias in alias_values: self._aliases[alias] = tool_name
                 return fn
@@ -126,9 +139,12 @@ class ToolRegistry:
             new_function = contents if contents is not None else item.function
             new_metadata = dict(item.metadata)
             for key, value in changes.items():
-                if key not in {"aliases", "description", "enabled", "trusted"}: new_metadata[key] = value
+                if key not in {"aliases", "description", "enabled", "trusted", "permissions"}: new_metadata[key] = value
+            new_permissions = changes.get("permissions", item.permissions)
+            if isinstance(new_permissions, dict): new_permissions = ToolPermissions(**new_permissions)
             new_item = Tool(new_function, target, changes.get("description", item.description), bool(changes.get("enabled", item.enabled)),
-                            bool(changes.get("trusted", item.trusted)), new_metadata, new_aliases, item._on_enable, item._on_disable)
+                            bool(changes.get("trusted", item.trusted)), new_metadata, new_aliases, new_permissions,
+                            item._on_enable, item._on_disable)
             was_enabled = item.enabled
             self._tools.pop(old)
             for alias in item.aliases: self._aliases.pop(alias, None)
@@ -145,6 +161,34 @@ class ToolRegistry:
             try: return self._tools[resolved]
             except KeyError: raise KeyError(f"Tool '{resolved}' is not registered") from None
     def schema(self, name): return self.get_tool(name).schema()
+
+    def permissions(self, name): return self.get_tool(name).permissions
+
+    def set_permissions(self, name, **changes):
+        with self._lock:
+            item = self.get_tool(name)
+            current = item.permissions
+            for key, value in changes.items():
+                if not hasattr(current, key): raise ValueError(f"Unknown permission: {key}")
+                if key == "max_calls" and value is not None and (not isinstance(value, int) or value < 0):
+                    raise ValueError("max_calls must be a non-negative integer or None")
+                if key == "timeout" and value is not None and (not isinstance(value, (int, float)) or value <= 0):
+                    raise ValueError("timeout must be positive or None")
+                if key == "output_limit" and value is not None and (not isinstance(value, int) or value < 0):
+                    raise ValueError("output_limit must be a non-negative integer or None")
+                setattr(current, key, value)
+            return current
+
+    def allow(self, name): return self.set_permissions(name, allowed=True)
+    def deny(self, name): return self.set_permissions(name, allowed=False)
+    def require_confirmation(self, name, required=True, callback=None):
+        changes = {"require_confirmation": bool(required)}
+        if callback is not None: changes["confirmation_callback"] = callback
+        return self.set_permissions(name, **changes)
+    def set_timeout(self, name, timeout): return self.set_permissions(name, timeout=timeout)
+    def set_output_limit(self, name, limit): return self.set_permissions(name, output_limit=limit)
+    def set_call_limit(self, name, limit): return self.set_permissions(name, max_calls=limit)
+
     def enable(self, name):
         with self._lock:
             item = self.get_tool(name)
