@@ -1,11 +1,10 @@
 """Opt-in Bash tool built on the host shell, not Termux."""
 from __future__ import annotations
 
-import os
 import shutil
 from typing import Optional
 
-from .terminal import Terminal, TerminalResult
+from .terminal import Terminal, TerminalResult, TerminalUnavailableError
 
 class Bash:
     """Controlled Bash runner. Disabled by default."""
@@ -29,21 +28,21 @@ class Bash:
         return info
 
     def run(self, command: str, *, timeout: Optional[float] = None,
-            cwd=None, env=None, stdin=None, check=False, max_output=None):
-        if not self.available():
-            raise RuntimeError("Bash is not installed on this host")
-        return self.terminal.run(command, timeout=timeout, shell=True, cwd=cwd,
-                                 env=env, stdin=stdin, check=check,
+            cwd=None, env=None, stdin=None, check=False, max_output=None) -> TerminalResult:
+        if not self.available(): raise TerminalUnavailableError("Bash is not installed on this host")
+        # Resolve Bash on every run so PATH changes after import are respected.
+        self.terminal.shell_path = shutil.which("bash")
+        return self.terminal.run(command, timeout=timeout, shell=self.terminal.shell_path,
+                                 cwd=cwd, env=env, stdin=stdin, check=check,
                                  max_output=max_output)
 
-    def execute(self, command: str, **kwargs):
-        return self.run(command, **kwargs).as_dict()
+    def execute(self, command: str, **kwargs): return self.run(command, **kwargs).as_dict()
 
 bash = Bash()
 
-# First-class AI tool. Explicitly disabled by default.
-def _bash_tool(command: str, **kwargs):
-    return bash.execute(command, **kwargs)
+def _bash_tool(command: str, **kwargs): return bash.execute(command, **kwargs)
+def _enable_bash(): bash.enable()
+def _disable_bash(): bash.disable()
 
 try:
     from .tools import tool
@@ -51,6 +50,9 @@ try:
              description="Execute a Bash command on the local host and return structured output.",
              trusted=True, aliases=("bash_execute",), category="development",
              dangerous=True, requires_explicit_enable=True)
+    entry = tool.get_tool("bash")
+    entry._on_enable = _enable_bash
+    entry._on_disable = _disable_bash
     tool.disable("bash")
 except Exception:
     pass
