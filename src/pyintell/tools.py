@@ -1,9 +1,4 @@
-"""Dynamic, introspectable user-tool registry.
-
-PyIntell deliberately does not ship a fixed set of AI tools. Applications register
-their own capabilities here. The registry provides metadata, validation,
-permissions, enable/disable state, aliases, and safe introspection.
-"""
+"""Dynamic, introspectable PyIntell tool registry."""
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional
 import inspect
@@ -19,109 +14,213 @@ class Tool:
     aliases: tuple[str, ...] = ()
 
     def __post_init__(self):
-        if not callable(self.function): raise TypeError("function must be callable")
-        if not isinstance(self.name, str) or not self.name.strip(): raise ValueError("tool name must be a non-empty string")
+        if not callable(self.function):
+            raise TypeError("function must be callable")
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("tool name must be a non-empty string")
         self.name = self.name.strip()
-        self.aliases = tuple(str(x).strip() for x in self.aliases if str(x).strip())
+        self.aliases = tuple(dict.fromkeys(str(x).strip() for x in self.aliases if str(x).strip()))
 
     def __call__(self, *args, **kwargs):
-        if not self.enabled: raise RuntimeError(f"Tool '{self.name}' is disabled")
+        if not self.enabled:
+            raise RuntimeError(f"Tool '{self.name}' is disabled")
         return self.function(*args, **kwargs)
 
     @property
     def signature(self):
-        try: return str(inspect.signature(self.function))
-        except (TypeError, ValueError): return "(*args, **kwargs)"
+        try:
+            return str(inspect.signature(self.function))
+        except (TypeError, ValueError):
+            return "(*args, **kwargs)"
 
     @property
     def source(self):
-        try: return inspect.getsource(self.function)
-        except (OSError, TypeError): return None
+        try:
+            return inspect.getsource(self.function)
+        except (OSError, TypeError):
+            return None
 
     def schema(self):
         try:
             sig = inspect.signature(self.function)
             parameters = []
             for p in sig.parameters.values():
-                parameters.append({"name": p.name, "kind": p.kind.name,
-                                   "required": p.default is inspect.Parameter.empty,
-                                   "default": None if p.default is inspect.Parameter.empty else repr(p.default),
-                                   "annotation": None if p.annotation is inspect.Parameter.empty else str(p.annotation)})
+                parameters.append({
+                    "name": p.name,
+                    "kind": p.kind.name,
+                    "required": p.default is inspect.Parameter.empty,
+                    "default": None if p.default is inspect.Parameter.empty else repr(p.default),
+                    "annotation": None if p.annotation is inspect.Parameter.empty else str(p.annotation),
+                })
             return_type = None if sig.return_annotation is inspect.Signature.empty else str(sig.return_annotation)
         except (TypeError, ValueError):
             parameters, return_type = [], None
-        return {"name": self.name, "description": self.description, "signature": self.signature,
-                "parameters": parameters, "return": return_type, "enabled": self.enabled,
-                "trusted": self.trusted, "aliases": list(self.aliases), "metadata": dict(self.metadata)}
+        return {
+            "name": self.name,
+            "description": self.description,
+            "signature": self.signature,
+            "parameters": parameters,
+            "return": return_type,
+            "enabled": self.enabled,
+            "trusted": self.trusted,
+            "aliases": list(self.aliases),
+            "metadata": dict(self.metadata),
+        }
 
 class ToolRegistry:
-    def __init__(self): self._tools: Dict[str, Tool] = {}; self._aliases: Dict[str, str] = {}
+    def __init__(self):
+        self._tools: Dict[str, Tool] = {}
+        self._aliases: Dict[str, str] = {}
 
-    def _resolve(self, name):
-        key = name if isinstance(name, str) else getattr(name, "__name__", None)
-        if not key: raise TypeError("tool must be a function or name")
-        key = str(key)
+    def _resolve(self, value):
+        key = value if isinstance(value, str) else getattr(value, "__name__", None)
+        if not key:
+            raise TypeError("tool must be a function or name")
+        key = str(key).strip()
         return self._aliases.get(key, key)
 
     def add(self, function=None, name: Optional[str] = None, description: str = "",
             trusted: bool = False, replace: bool = False, aliases=(), **metadata):
         def register(fn):
-            if not callable(fn): raise TypeError("tool must be callable")
-            tool_name = (name or getattr(fn, "__name__", None) or "").strip()
-            if not tool_name: raise ValueError("tool function needs a name")
-            if tool_name in self._tools and not replace: raise ValueError(f"Tool '{tool_name}' is already registered")
-            if replace and tool_name in self._tools: self.remove(tool_name)
-            item = Tool(fn, tool_name, description or inspect.getdoc(fn) or "", True, trusted, metadata, tuple(aliases))
+            if not callable(fn):
+                raise TypeError("tool must be callable")
+            tool_name = str(name or getattr(fn, "__name__", "")).strip()
+            if not tool_name:
+                raise ValueError("tool function needs a name")
+            alias_values = tuple(dict.fromkeys(str(x).strip() for x in aliases if str(x).strip()))
+            if tool_name in self._tools or tool_name in self._aliases:
+                if not replace:
+                    raise ValueError(f"Tool '{tool_name}' is already registered")
+                self.remove(tool_name)
+            conflicts = [a for a in alias_values if a == tool_name or a in self._tools or a in self._aliases]
+            if conflicts:
+                raise ValueError(f"Tool alias is already registered: {conflicts[0]!r}")
+            item = Tool(fn, tool_name, description or inspect.getdoc(fn) or "", True, trusted, dict(metadata), alias_values)
             self._tools[tool_name] = item
-            for alias in item.aliases:
-                if alias in self._tools or alias in self._aliases: raise ValueError(f"Tool alias '{alias}' is already registered")
+            for alias in alias_values:
                 self._aliases[alias] = tool_name
             return fn
         return register(function) if function is not None else register
 
     def remove(self, function):
         name = self._resolve(function)
-        if name not in self._tools: return False
-        item = self._tools.pop(name)
-        for alias in item.aliases: self._aliases.pop(alias, None)
+        item = self._tools.pop(name, None)
+        if item is None:
+            return False
+        for alias in item.aliases:
+            self._aliases.pop(alias, None)
         return True
 
     def edit(self, function, contents=None, new_name=None, **changes):
         old = self._resolve(function)
-        if old not in self._tools: raise KeyError(old)
+        if old not in self._tools:
+            raise KeyError(old)
         item = self._tools[old]
-        old_aliases = item.aliases
-        if contents is not None:
-            if not callable(contents): raise TypeError("contents must be callable")
-            item.function = contents
-        target = (new_name or old).strip() if isinstance(new_name or old, str) else new_name
-        if not target: raise ValueError("new_name must be a non-empty string")
-        if target != old and target in self._tools: raise ValueError(f"Tool '{target}' is already registered")
-        for key, value in changes.items():
-            if key in {"function", "name"}: raise ValueError(f"use contents/new_name to change '{key}'")
-            if key == "aliases":
-                for alias in old_aliases: self._aliases.pop(alias, None)
-                item.aliases = tuple(value)
-                for alias in item.aliases: self._aliases[alias] = target
-            elif hasattr(item, key): setattr(item, key, value)
-            else: item.metadata[key] = value
-        if target != old:
-            self._tools.pop(old); item.name = target; self._tools[target] = item
-            for alias in item.aliases: self._aliases[alias] = target
-        return item.function
+        if contents is not None and not callable(contents):
+            raise TypeError("contents must be callable")
+        target = old if new_name is None else str(new_name).strip()
+        if not target:
+            raise ValueError("new_name must be a non-empty string")
+        if target != old and (target in self._tools or target in self._aliases):
+            raise ValueError(f"Tool '{target}' is already registered")
 
-    def get(self, function): return self._tools[self._resolve(function)].function
-    def get_tool(self, name): return self._tools[self._resolve(name)]
-    def schema(self, name): return self.get_tool(name).schema()
-    def enable(self, name): self.get_tool(name).enabled = True; return self.get_tool(name)
-    def disable(self, name): self.get_tool(name).enabled = False; return self.get_tool(name)
-    def is_enabled(self, name): return self.get_tool(name).enabled
-    def clear(self): self._tools.clear(); self._aliases.clear()
-    def names(self, enabled_only=False): return [n for n,t in self._tools.items() if not enabled_only or t.enabled]
-    def list(self, enabled_only=False): return [t.schema() for t in self._tools.values() if not enabled_only or t.enabled]
-    def call(self, name, *args, **kwargs): return self.get_tool(name)(*args, **kwargs)
-    def __contains__(self, name): return self._resolve(name) in self._tools
-    def __len__(self): return len(self._tools)
+        new_aliases = item.aliases
+        if "aliases" in changes:
+            new_aliases = tuple(dict.fromkeys(str(x).strip() for x in changes["aliases"] if str(x).strip()))
+        reserved = set(self._tools) | set(self._aliases)
+        reserved.discard(old)
+        for alias in new_aliases:
+            if alias == target or alias in reserved:
+                raise ValueError(f"Tool alias is already registered: {alias!r}")
+
+        # Validate everything before mutating the registry.
+        for key in changes:
+            if key in {"function", "name"}:
+                raise ValueError(f"use contents/new_name to change '{key}'")
+        new_function = contents if contents is not None else item.function
+        new_description = changes.get("description", item.description)
+        new_enabled = changes.get("enabled", item.enabled)
+        new_trusted = changes.get("trusted", item.trusted)
+        new_metadata = dict(item.metadata)
+        for key, value in changes.items():
+            if key not in {"aliases", "description", "enabled", "trusted"}:
+                new_metadata[key] = value
+        new_item = Tool(new_function, target, new_description, bool(new_enabled), bool(new_trusted), new_metadata, new_aliases)
+
+        self._tools.pop(old)
+        for alias in item.aliases:
+            self._aliases.pop(alias, None)
+        self._tools[target] = new_item
+        for alias in new_aliases:
+            self._aliases[alias] = target
+        return new_item.function
+
+    def get(self, function):
+        return self.get_tool(function).function
+
+    def get_tool(self, name):
+        return self._tools[self._resolve(name)]
+
+    def schema(self, name):
+        return self.get_tool(name).schema()
+
+    def enable(self, name):
+        item = self.get_tool(name)
+        item.enabled = True
+        return item
+
+    def disable(self, name):
+        item = self.get_tool(name)
+        item.enabled = False
+        return item
+
+    def is_enabled(self, name):
+        return self.get_tool(name).enabled
+
+    def clear(self):
+        self._tools.clear()
+        self._aliases.clear()
+
+    def names(self, enabled_only=False):
+        return [n for n, t in self._tools.items() if not enabled_only or t.enabled]
+
+    def list(self, enabled_only=False):
+        return [t.schema() for t in self._tools.values() if not enabled_only or t.enabled]
+
+    def call(self, name, *args, **kwargs):
+        return self.get_tool(name)(*args, **kwargs)
+
+    def __contains__(self, name):
+        try:
+            return self._resolve(name) in self._tools
+        except TypeError:
+            return False
+
+    def __len__(self):
+        return len(self._tools)
 
 tool = ToolRegistry()
 add, remove, edit, get = tool.add, tool.remove, tool.edit, tool.get
+
+
+def _code_execution_impl(code: str, language: str = "python", timeout=None, stdin=None,
+                         filename=None, cwd=None, env=None, args=(), keep_file=False, compile=True):
+    """Execute development code through PyIntell's opt-in execution engine."""
+    from .execution import executor
+    result = executor.run(code, language, timeout=timeout, stdin=stdin, filename=filename,
+                          cwd=cwd, env=env, args=args, keep_file=keep_file, compile=compile)
+    return result.as_dict()
+
+# Code execution is a first-class tool, but remains disabled by default.
+tool.add(
+    _code_execution_impl,
+    name="code_execution",
+    description="Execute code using an installed development runtime or compiler and return structured output.",
+    trusted=True,
+    aliases=("execute_code", "run_code"),
+    category="development",
+    dangerous=True,
+    requires_explicit_enable=True,
+)
+tool.disable("code_execution")
+code_execution = tool.get_tool("code_execution")
