@@ -31,7 +31,6 @@ def register_language(language: Language):
 def _add(name, ext=(), commands=(), run=(), compile=(), gui=False, frameworks=(), aliases=(), **metadata):
     return register_language(Language(name, tuple(ext), tuple(commands), tuple(run), tuple(compile), gui, tuple(frameworks), tuple(aliases), metadata))
 
-# The registry is intentionally broader than any one machine. Availability is discovered at runtime.
 _add("Python", (".py",), ("python", "python3", "py"), frameworks=("Tkinter", "CustomTkinter", "Kivy", "PySide6", "PyQt6", "wxPython", "Pygame", "Flask", "FastAPI", "Django", "Toga", "Dear PyGui", "Flet"), aliases=("py",))
 _add("JavaScript", (".js", ".mjs", ".cjs"), ("node", "bun", "deno"), gui=True, frameworks=("Electron", "React", "React Native", "Vue", "Svelte"), aliases=("js", "nodejs"))
 _add("TypeScript", (".ts", ".tsx"), ("tsx", "ts-node", "bun", "deno"), gui=True, frameworks=("React", "Angular", "Vue", "Svelte", "Next.js"), aliases=("ts",))
@@ -70,7 +69,7 @@ _add("SQL", (".sql",), ("sqlite3",), frameworks=("SQLite", "PostgreSQL", "MySQL"
 _add("HTML", (".html", ".htm"), (), gui=True, frameworks=("CSS", "JavaScript", "WebAssembly"))
 _add("CSS", (".css", ".scss", ".sass", ".less"), (), gui=True, frameworks=("Tailwind", "Bootstrap"))
 _add("WebAssembly", (".wat", ".wasm"), ("wasmtime", "wasmer", "wasm3", "wat2wasm"), aliases=("wasm", "webassembly"))
-_add("MATLAB", (".m"), ("matlab", "octave"), aliases=("octave",))
+_add("MATLAB", (".m",), ("matlab", "octave"), aliases=("octave",))
 _add("VHDL", (".vhd", ".vhdl"), ("ghdl",))
 _add("Verilog", (".v", ".sv"), ("iverilog", "verilator"))
 _add("Prolog", (".plg", ".pro"), ("swipl",), aliases=("swi-prolog",))
@@ -102,7 +101,6 @@ def get_language(value: str, filename: Optional[str] = None) -> Language:
             for ext in language.extensions:
                 if low.endswith(ext.lower()): candidates.append(language); break
         if candidates:
-            # Prefer the more specific extension and deterministic registration order.
             candidates.sort(key=lambda x: max((len(e) for e in x.extensions if low.endswith(e.lower())), default=0), reverse=True)
             return candidates[0]
     raise KeyError(f"Unknown language: {value!r}")
