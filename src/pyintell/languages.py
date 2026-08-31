@@ -70,7 +70,7 @@ _add("SQL", (".sql",), ("sqlite3",), frameworks=("SQLite", "PostgreSQL", "MySQL"
 _add("HTML", (".html", ".htm"), (), gui=True, frameworks=("CSS", "JavaScript", "WebAssembly"))
 _add("CSS", (".css", ".scss", ".sass", ".less"), (), gui=True, frameworks=("Tailwind", "Bootstrap"))
 _add("WebAssembly", (".wat", ".wasm"), ("wasmtime", "wasmer", "wasm3", "wat2wasm"), aliases=("wasm", "webassembly"))
-_add("MATLAB", (".m",), ("matlab", "octave"), aliases=("octave",))
+_add("MATLAB", (".m"), ("matlab", "octave"), aliases=("octave",))
 _add("VHDL", (".vhd", ".vhdl"), ("ghdl",))
 _add("Verilog", (".v", ".sv"), ("iverilog", "verilator"))
 _add("Prolog", (".plg", ".pro"), ("swipl",), aliases=("swi-prolog",))
@@ -91,11 +91,20 @@ GUI_FRAMEWORKS = {
 
 def get_language(value: str, filename: Optional[str] = None) -> Language:
     key = str(value or "").lower()
-    if key in LANGUAGES: return LANGUAGES[key]
+    if key and key in LANGUAGES: return LANGUAGES[key]
     if filename:
         low = str(filename).lower()
-        matches = [x for x in {id(v): v for v in LANGUAGES.values()}.values() if any(low.endswith(e.lower()) for e in x.extensions)]
-        if matches: return matches[0]
+        candidates = []
+        seen = set()
+        for language in LANGUAGES.values():
+            if id(language) in seen: continue
+            seen.add(id(language))
+            for ext in language.extensions:
+                if low.endswith(ext.lower()): candidates.append(language); break
+        if candidates:
+            # Prefer the more specific extension and deterministic registration order.
+            candidates.sort(key=lambda x: max((len(e) for e in x.extensions if low.endswith(e.lower())), default=0), reverse=True)
+            return candidates[0]
     raise KeyError(f"Unknown language: {value!r}")
 
 def list_languages(available_only=False, gui_only=False):
