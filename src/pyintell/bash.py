@@ -1,55 +1,124 @@
-"""Opt-in Bash tool built on the host shell, not Termux."""
+"""Opt-in shell tool with Bash-first execution and POSIX fallback, not Termux."""
 from __future__ import annotations
 
 import shutil
 from typing import Optional
 
-from .terminal import Terminal, TerminalResult, TerminalUnavailableError
+from .terminal import Terminal, TerminalResult
+
 
 class Bash:
-    """Controlled Bash runner. Disabled by default."""
+    """Controlled Bash-compatible shell runner. Disabled by default.
+
+    Uses real Bash when installed. On hosts such as Android/Pydroid where Bash
+    is absent, it falls back to the host POSIX ``sh`` so basic shell commands,
+    pipelines, variables, loops, stdin, redirects, and exit codes still work.
+    """
+
     def __init__(self, enabled=False, timeout=30.0, max_output=1_000_000):
-        self.terminal = Terminal(enabled=enabled, timeout=timeout,
-                                 require_termux=False, shell_path=shutil.which("bash"),
-                                 max_output=max_output)
-
-    @property
-    def enabled(self): return self.terminal.enabled
-
-    def enable(self): self.terminal.enable(); return self
-    def disable(self): self.terminal.disable(); return self
+        self._shell_path = self._resolve_shell()
+        self.terminal = Terminal(
+            enabled=enabled,
+            timeout=timeout,
+            require_termux=False,
+            shell_path=self._shell_path,
+            max_output=max_output,
+        )
 
     @staticmethod
-    def available(): return shutil.which("bash") is not None
+    def _resolve_shell():
+        return shutil.which("bash") or shutil.which("sh")
+
+    @property
+    def enabled(self):
+        return self.terminal.enabled
+
+    def enable(self):
+        self.terminal.enable()
+        return self
+
+    def disable(self):
+        self.terminal.disable()
+        return self
+
+    @classmethod
+    def available(cls):
+        return cls._resolve_shell() is not None
+
+    @classmethod
+    def bash_available(cls):
+        return shutil.which("bash") is not None
 
     def status(self):
         info = self.terminal.status()
-        info["bash_available"] = self.available()
+        info["bash_available"] = self.bash_available()
+        info["shell_available"] = self.available()
+        info["shell_path"] = self._shell_path
+        info["fallback"] = self._shell_path is not None and not self.bash_available()
         return info
 
-    def run(self, command: str, *, timeout: Optional[float] = None,
-            cwd=None, env=None, stdin=None, check=False, max_output=None) -> TerminalResult:
-        if not self.available(): raise TerminalUnavailableError("Bash is not installed on this host")
-        # Resolve Bash on every run so PATH changes after import are respected.
-        self.terminal.shell_path = shutil.which("bash")
-        return self.terminal.run(command, timeout=timeout, shell=self.terminal.shell_path,
-                                 cwd=cwd, env=env, stdin=stdin, check=check,
-                                 max_output=max_output)
+    def run(
+        self,
+        command: str,
+        *,
+        timeout: Optional[float] = None,
+        cwd=None,
+        env=None,
+        stdin=None,
+        check=False,
+        max_output=None,
+    ) -> TerminalResult:
+        shell = self._resolve_shell()
+        if shell is None:
+            raise RuntimeError("No Bash or POSIX shell is installed on this host")
 
-    def execute(self, command: str, **kwargs): return self.run(command, **kwargs).as_dict()
+        # Resolve on every run so PATH changes after import are respected.
+        self._shell_path = shell
+        self.terminal.shell_path = shell
+
+        return self.terminal.run(
+            command,
+            timeout=timeout,
+            shell=shell,
+            cwd=cwd,
+            env=env,
+            stdin=stdin,
+            check=check,
+            max_output=max_output,
+        )
+
+    def execute(self, command: str, **kwargs):
+        return self.run(command, **kwargs).as_dict()
+
 
 bash = Bash()
 
-def _bash_tool(command: str, **kwargs): return bash.execute(command, **kwargs)
-def _enable_bash(): bash.enable()
-def _disable_bash(): bash.disable()
+
+def _bash_tool(command: str, **kwargs):
+    return bash.execute(command, **kwargs)
+
+
+def _enable_bash():
+    bash.enable()
+
+
+def _disable_bash():
+    bash.disable()
+
 
 try:
     from .tools import tool
-    tool.add(_bash_tool, name="bash",
-             description="Execute a Bash command on the local host and return structured output.",
-             trusted=True, aliases=("bash_execute",), category="development",
-             dangerous=True, requires_explicit_enable=True)
+
+    tool.add(
+        _bash_tool,
+        name="bash",
+        description="Execute a Bash command on the local host and return structured output.",
+        trusted=True,
+        aliases=("bash_execute",),
+        category="development",
+        dangerous=True,
+        requires_explicit_enable=True,
+    )
     entry = tool.get_tool("bash")
     entry._on_enable = _enable_bash
     entry._on_disable = _disable_bash
