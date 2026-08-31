@@ -9,6 +9,7 @@ class CrashLogger:
     def __init__(self, directory=None, level="INFO", enabled=True):
         self.directory = Path(directory or (Path.home() / ".pyintell" / "logs"))
         self.level = str(level).upper(); self.enabled = bool(enabled)
+        if self.level not in _LEVELS: raise ValueError(f"unknown log level: {level!r}")
         if self.enabled: self.directory.mkdir(parents=True, exist_ok=True)
     def _write(self, level, message, **context):
         if not self.enabled or _LEVELS.get(level, 20) < _LEVELS.get(self.level, 20): return None
@@ -27,7 +28,8 @@ class CrashLogger:
         record = {"timestamp": time.time(), "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "level": "CRITICAL", "message": message or str(exc), "exception_type": type(exc).__name__, "exception": str(exc), "traceback": "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)), "python": sys.version, "platform": platform.platform(), "context": context}
         path = self.directory / f"crash-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}.json"
         path.write_text(json.dumps(record, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-        self._write("CRITICAL", message or str(exc), exception_type=type(exc).__name__, crash_file=str(path), **context)
+        log_context = dict(context); log_context["exception_type"] = type(exc).__name__; log_context["crash_file"] = str(path)
+        self._write("CRITICAL", message or str(exc), **log_context)
         return path
     def install_excepthook(self):
         previous = sys.excepthook
