@@ -32,6 +32,7 @@ from .source_verification import Evidence, VerificationReport, verify_sources
 from .evaluation import EvaluationResult, Evaluator, evaluate
 from .crashlog import CrashLogger, get_logger, log, crash
 from .terminal import Terminal, TerminalResult, TerminalDisabledError, TerminalUnavailableError, terminal
+from .bash import Bash, bash
 from .languages import Language, LANGUAGES, GUI_FRAMEWORKS, register_language, register, get_language, detect_language, list_languages
 from .execution import CodeExecutor, ExecutionPolicy, ExecutionResult, ExecutionDisabledError, RuntimeUnavailableError, executor, code_execute, run_code
 from .capabilities import Config, EventBus, LRUCache, ScopedMemory, Context, TaskPlan, TaskStep, RetryPolicy, config, events, cache, memory, context, fingerprint as capability_fingerprint
