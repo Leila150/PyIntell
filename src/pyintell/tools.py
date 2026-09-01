@@ -37,7 +37,9 @@ class Tool:
     def __call__(self, *args, **kwargs):
         if not self.enabled: raise ToolDisabledError(f"Tool '{self.name}' is disabled")
         confirmed = bool(kwargs.pop("_confirmed", False))
-        self.permissions.check(self.name, confirmed=confirmed)
+        caller = kwargs.pop("_caller", None)
+        trusted = bool(kwargs.pop("_trusted", True))
+        self.permissions.check(self.name, confirmed=confirmed, caller=caller, trusted=trusted)
         call_kwargs = dict(kwargs)
         if self.permissions.timeout is not None and "timeout" not in call_kwargs:
             call_kwargs["timeout"] = self.permissions.timeout
@@ -170,12 +172,18 @@ class ToolRegistry:
             current = item.permissions
             for key, value in changes.items():
                 if not hasattr(current, key): raise ValueError(f"Unknown permission: {key}")
-                if key == "max_calls" and value is not None and (not isinstance(value, int) or value < 0):
+                if key == "max_calls" and value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 0):
                     raise ValueError("max_calls must be a non-negative integer or None")
-                if key == "timeout" and value is not None and (not isinstance(value, (int, float)) or value <= 0):
+                if key == "timeout" and value is not None and (not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0):
                     raise ValueError("timeout must be positive or None")
-                if key == "output_limit" and value is not None and (not isinstance(value, int) or value < 0):
+                if key == "output_limit" and value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 0):
                     raise ValueError("output_limit must be a non-negative integer or None")
+                if key == "rate_limit" and value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 0):
+                    raise ValueError("rate_limit must be a non-negative integer or None")
+                if key == "rate_window" and value is not None and (not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0):
+                    raise ValueError("rate_window must be positive or None")
+                if key in {"allowed_callers", "blocked_callers"} and value is not None:
+                    value = tuple(dict.fromkeys(str(x).strip() for x in value if str(x).strip()))
                 setattr(current, key, value)
             return current
 
@@ -188,6 +196,13 @@ class ToolRegistry:
     def set_timeout(self, name, timeout): return self.set_permissions(name, timeout=timeout)
     def set_output_limit(self, name, limit): return self.set_permissions(name, output_limit=limit)
     def set_call_limit(self, name, limit): return self.set_permissions(name, max_calls=limit)
+    def require_trusted(self, name, required=True): return self.set_permissions(name, require_trusted=bool(required))
+    def require_explicit_enable(self, name, required=True): return self.set_permissions(name, require_explicit_enable=bool(required))
+    def allow_callers(self, name, callers): return self.set_permissions(name, allowed_callers=callers)
+    def block_callers(self, name, callers): return self.set_permissions(name, blocked_callers=callers)
+    def set_rate_limit(self, name, calls, window): return self.set_permissions(name, rate_limit=calls, rate_window=window)
+    def reset_call_count(self, name):
+        permissions = self.permissions(name); permissions.reset_calls(); return permissions
 
     def enable(self, name):
         with self._lock:
